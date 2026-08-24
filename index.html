@@ -882,7 +882,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=21, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=22, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -1317,6 +1317,24 @@ async function overpassQuery(ql){
  throw new Error('Không kết nối được OpenStreetMap ('+(lastErr&&lastErr.message||'network')+'). '+osmConnectionHint());
 }
 function osmEscapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\"]/g,'\\$&')}
+// Nhận tọa độ từ nhiều định dạng: "lat, lng" thường, hoặc URL Google Maps/地図 (@lat,lng / !3d..!4d.. / q= / ll=)
+function parseCoordsAny(q){
+ const s=String(q||'').trim();
+ const pats=[
+  /@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/,                 // .../@35.50,140.30,15z (URL trình duyệt)
+  /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,             // ...!3d35.50!4d140.30 (URL place)
+  /[?&](?:q|ll|query|center)=(-?\d{1,2}\.\d+)(?:,|%2C)(-?\d{1,3}\.\d+)/i, // ?q=lat,lng
+  /^(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/  // "35.50, 140.30" dán tay
+ ];
+ for(const p of pats){
+  const m=s.match(p);
+  if(m){
+   const lat=Number(m[1]),lng=Number(m[2]);
+   if(lat>=-90&&lat<=90&&lng>=-180&&lng<=180)return {lat,lng};
+  }
+ }
+ return null;
+}
 async function fetchJsonTimeout(url,ms){
  const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),ms);
  try{
@@ -1596,7 +1614,7 @@ function renderCourseEditor(){
    <div class="row" style="gap:8px"><input id="osmQ" placeholder="Tên sân, hoặc tọa độ giữa sân: 35.45, 140.29" onkeydown="if(event.key==='Enter')app.osmSearch()"><button class="btn primary" id="osmSearchBtn" style="min-width:74px" onclick="app.osmSearch()">Tìm</button></div>
    ${(()=>{let f=false;try{f=window.self!==window.top}catch(e){f=true}return f?'<div class="gps-warning" style="margin-top:7px">⚠️ App đang chạy trong khung xem trước — tìm OSM và GPS không hoạt động ở đây. Hãy tải file về, mở bằng Safari/Chrome hoặc đưa lên HTTPS.</div>':''})()}
    <div id="osmResults" style="margin-top:7px;max-height:230px;overflow:auto"></div>
-   <div class="small" style="margin-top:6px">Chỉ cần tìm ở ô này — gõ tên sân, hoặc dán tọa độ giữa sân dạng "35.45, 140.29". Nếu sân đã được vẽ chi tiết trên OSM, app tự điền Par/chiều dài/GPS; nếu chưa, <b>bản đồ vệ tinh sẽ tự mở đúng vị trí sân</b> để bạn chạm đánh dấu green. Ô tìm bên trong bản đồ chỉ là phụ, không cần dùng. Tìm kiếm: Nominatim/Photon • Dữ liệu © OpenStreetMap contributors (ODbL).</div>
+   <div class="small" style="margin-top:6px">Chỉ cần tìm ở ô này — gõ tên sân; hoặc dán tọa độ giữa sân dạng "35.45, 140.29" (Google Maps: nhấn giữ điểm trên bản đồ → chạm tọa độ để copy); hoặc dán nguyên URL Google Maps trên máy tính (dạng có @35.50,140.30). Nếu sân đã được vẽ chi tiết trên OSM, app tự điền Par/chiều dài/GPS; nếu chưa, <b>bản đồ vệ tinh sẽ tự mở đúng vị trí sân</b> để bạn chạm đánh dấu green. Ô tìm bên trong bản đồ chỉ là phụ, không cần dùng. Tìm kiếm: Nominatim/Photon • Dữ liệu © OpenStreetMap contributors (ODbL).</div>
   </div>
   <button class="btn primary" style="width:100%;margin-top:10px" onclick="app.openEditorMap()">② 🗺️ Mở bản đồ vệ tinh — chạm để đánh dấu Tee/Green</button>
   <div class="small" style="margin-top:8px">Green GPS: <b>${c.holes.filter(h=>h.greenGps).length}/18</b> • Tee GPS: <b>${c.holes.filter(h=>h.teeGps).length}/18</b></div>
@@ -1699,8 +1717,8 @@ const app={
  mapToggleBase(){if(!lmap||!baseLayers)return;lmap.removeLayer(baseLayers[mapBase]);mapBase=mapBase==='photo'?'osm':'photo';baseLayers[mapBase].addTo(lmap);refreshMapUI()},
  async mapSearchGo(){
   const q=(document.getElementById('mapQ')?.value||'').trim(); if(q.length<2)return;
-  const mc=q.match(/^(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/);
-  if(mc&&lmap){lmap.setView([Number(mc[1]),Number(mc[2])],17);return}
+  const mc=parseCoordsAny(q);
+  if(mc&&lmap){lmap.setView([mc.lat,mc.lng],17);return}
   const btn=document.getElementById('mapGoBtn');
   if(btn){btn.disabled=true;btn.textContent='⏳'}
   toast('Đang tìm vị trí…');
@@ -1741,12 +1759,14 @@ const app={
   if(q.length<2){toast('Nhập tên sân hoặc dán tọa độ');return}
   const box=document.getElementById('osmResults'),btn=document.getElementById('osmSearchBtn');
   const busy=on=>{if(btn){btn.disabled=on;btn.textContent=on?'Đang tìm…':'Tìm'}};
-  const mc=q.match(/^(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/);
+  const mc=parseCoordsAny(q);
   if(mc){
-   const lat=Number(mc[1]),lng=Number(mc[2]);
-   if(!(lat>=-90&&lat<=90&&lng>=-180&&lng<=180)){alert('Tọa độ không hợp lệ.');return}
    busy(true);
-   try{const d=0.013;await osmImportBounds({minlat:lat-d,maxlat:lat+d,minlon:lng-d,maxlon:lng+d},null)}finally{busy(false)}
+   try{const d=0.013;await osmImportBounds({minlat:mc.lat-d,maxlat:mc.lat+d,minlon:mc.lng-d,maxlon:mc.lng+d},null)}finally{busy(false)}
+   return;
+  }
+  if(/^https?:\/\//i.test(q)||q.includes('goo.gl')||q.includes('maps.app')){
+   if(box)box.innerHTML='<div class="gps-warning">Link này không chứa tọa độ (link rút gọn "Chia sẻ" của Google Maps không dùng được). Cách lấy: nhấn giữ điểm trên bản đồ Google Maps → tọa độ hiện ra → chạm để copy; hoặc trên máy tính copy nguyên URL trên thanh địa chỉ (có dạng @35.50,140.30).</div>';
    return;
   }
   busy(true);
