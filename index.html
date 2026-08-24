@@ -41,7 +41,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 .history-item{padding:12px 0;border-bottom:1px solid var(--line)}.history-item:last-child{border-bottom:0}.history-title{font-weight:850;color:var(--green)}
 .mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#e9f0eb;border-radius:12px;padding:4px;margin-bottom:12px}.mode-tab{border:0;border-radius:9px;background:transparent;padding:10px 8px;font-weight:800;color:var(--muted)}.mode-tab.active{background:#fff;color:var(--green);box-shadow:0 2px 8px rgba(20,59,42,.09)}.mode-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:4px 7px;border-radius:999px;background:#e7f1ea;color:var(--green);margin-left:5px}.mode-badge.sim{background:#e9eef8;color:#315fa3}.empty{text-align:center;padding:35px 15px;color:var(--muted)}.note{padding:10px 12px;background:#f6f3e6;border-radius:12px;font-size:13px;color:#64582b}.danger-zone{border-color:#f0c2c7}.hidden{display:none!important}
 .modal{position:fixed;inset:0;z-index:50;background:rgba(10,20,14,.48);display:flex;align-items:flex-end;justify-content:center}.modal .sheet{width:100%;max-width:760px;max-height:92vh;overflow:auto;background:#fff;border-radius:20px 20px 0 0;padding:18px 14px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.2)}.modal h3{margin:0 0 14px;color:var(--green)}
-.toast{position:fixed;z-index:80;left:50%;bottom:92px;transform:translateX(-50%);background:#153b2a;color:#fff;padding:10px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;white-space:nowrap}.toast.show{opacity:1}
+.toast{position:fixed;z-index:130;left:50%;bottom:92px;transform:translateX(-50%);background:#153b2a;color:#fff;padding:10px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;white-space:nowrap}.toast.show{opacity:1}
 @media(max-width:520px){.grid4{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:1fr 1fr}.putt{grid-template-columns:52px 1fr 96px 44px}.metric-grid{grid-template-columns:repeat(3,1fr)}.brand h1{font-size:18px}}
 </style>
 
@@ -882,7 +882,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=19, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=20, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -1465,6 +1465,11 @@ function drawCourseMarkers(){
  if(!lmap||!mapMarkerLayer)return; mapMarkerLayer.clearLayers();
  const c=mapCourse(); if(!c)return;
  c.holes.forEach(h=>{
+  if(h.teeGps&&h.greenGps){
+   mapMarkerLayer.addLayer(L.polyline([[h.teeGps.lat,h.teeGps.lng],[h.greenGps.lat,h.greenGps.lng]],{color:mapHole===h.hole?'#ffd24d':'#69c98b',weight:2,dashArray:'5 7',opacity:.85,interactive:false}));
+  }
+ });
+ c.holes.forEach(h=>{
   if(h.teeGps){
    const m=L.marker([h.teeGps.lat,h.teeGps.lng],{icon:teeIcon(h.hole,mapHole===h.hole),draggable:mapCtx==='editor'});
    m.on('click',()=>{mapHole=h.hole;mapTarget='tee';refreshMapUI()});
@@ -1487,7 +1492,8 @@ function editorMapBottomHtml(){
   <button class="btn compact" onclick="app.mapDeletePoint()">× Xóa điểm</button>
   <button class="btn compact" onclick="app.mapToggleBase()">${mapBase==='photo'?'🗺️ Bản đồ':'🛰️ Vệ tinh'}</button>
  </div>
- <div class="map-hint">Chạm bản đồ để đặt <b>${mapTarget==='tee'?'⛳ Tee':'🎯 Green'}</b> cho <b>Hole ${mapHole}</b>${h[key]?' — đã có điểm, chạm chỗ khác để dời hoặc kéo marker':''}. Đặt xong green sẽ tự chuyển hố tiếp theo.</div>`;
+ <div class="map-hint">Chạm bản đồ để đặt <b>${mapTarget==='tee'?'⛳ Tee':'🎯 Green'}</b> cho <b>Hole ${mapHole}</b>${h[key]?' — đã có điểm, chạm chỗ khác để dời hoặc kéo marker':''}. Đặt xong green sẽ tự chuyển hố tiếp theo.</div>
+ ${c.holes.filter(x=>x.greenGps).length<18?`<div class="map-hint" style="opacity:.72">💡 Chưa rõ đâu là hố mấy? Mở コースレイアウト (sơ đồ sân) trên website chính thức của sân để đối chiếu: hố 1 thường bắt đầu ngay cạnh clubhouse, và green hố N nằm gần tee hố N+1. Đặt nhầm hố thì chọn lại số ở dải trên rồi chạm lại.</div>`:''}`;
 }
 function roundMapBottomHtml(){
  const c=courseForRound(currentRound()); if(!c)return '';
@@ -1505,7 +1511,7 @@ function openEditorMap(){
  if(!hasLeaflet()){alert('Không tải được thư viện bản đồ.');return}
  mapCtx='editor'; mapTarget='green';
  const idx=courseDraft.holes.findIndex(h=>!h.greenGps); mapHole=idx>=0?idx+1:1;
- openMapShell(`<button class="btn compact" onclick="app.closeMap()">✕ Xong</button><input id="mapQ" placeholder="Tìm sân / địa danh để bay đến…" onkeydown="if(event.key==='Enter')app.mapSearchGo()"><button class="btn compact" onclick="app.mapSearchGo()">🔍</button>`);
+ openMapShell(`<button class="btn compact" onclick="app.closeMap()">✕ Xong</button><input id="mapQ" placeholder="Tên sân hoặc tọa độ để bay đến…" onkeydown="if(event.key==='Enter')app.mapSearchGo()"><button class="btn compact" id="mapGoBtn" onclick="app.mapSearchGo()">🔍</button>`);
  const fp=firstCoursePoint(courseDraft);
  initLeaflet(fp?[fp.lat,fp.lng]:[36.2048,138.2529],fp?17:5);
  lmap.on('click',e=>{
@@ -1582,11 +1588,10 @@ function renderCourseEditor(){
   <div class="field" style="margin-top:9px"><label>Các tee (phân cách bằng dấu phẩy)</label><input value="${esc(c.tees.join(', '))}" onchange="app.cSetTees(this.value)" placeholder="Regular, Back, Ladies"></div>
   <div class="osm-box">
    <label>🔎 Lấy dữ liệu miễn phí từ OpenStreetMap</label>
-   <div class="row" style="gap:8px"><input id="osmQ" placeholder="Tên sân (tiếng Nhật thường tìm trúng hơn)…" onkeydown="if(event.key==='Enter')app.osmSearch()"><button class="btn primary" style="min-width:74px" onclick="app.osmSearch()">Tìm</button></div>
+   <div class="row" style="gap:8px"><input id="osmQ" placeholder="Tên sân, hoặc tọa độ giữa sân: 35.45, 140.29" onkeydown="if(event.key==='Enter')app.osmSearch()"><button class="btn primary" id="osmSearchBtn" style="min-width:74px" onclick="app.osmSearch()">Tìm</button></div>
    ${(()=>{let f=false;try{f=window.self!==window.top}catch(e){f=true}return f?'<div class="gps-warning" style="margin-top:7px">⚠️ App đang chạy trong khung xem trước — tìm OSM và GPS không hoạt động ở đây. Hãy tải file về, mở bằng Safari/Chrome hoặc đưa lên HTTPS.</div>':''})()}
    <div id="osmResults" style="margin-top:7px;max-height:230px;overflow:auto"></div>
-   <div class="row" style="gap:8px;margin-top:8px"><input id="osmLL" placeholder="Không ra tên? Dán tọa độ giữa sân: 35.45, 140.29" inputmode="decimal"><button class="btn" style="min-width:74px" onclick="app.osmFetchAt()">Lấy</button></div>
-   <div class="small" style="margin-top:6px">Tự điền Par, chiều dài hố (đo theo đường chơi trên bản đồ) và GPS tee/green nếu sân đã được vẽ chi tiết trên OSM. Tên trên OSM có thể viết khác (ヌーベル/ヌーヴェル…) — khi tìm tên không ra, dán tọa độ giữa sân (nhấn giữ trên Google Maps) rồi bấm Lấy: app quét thẳng vùng ±1.5km quanh điểm đó, không cần đúng tên. Độ phủ sân Nhật chưa đều — sân chưa được vẽ thì dùng 📡/✎ bên dưới. Tìm kiếm qua Nominatim/Photon; dữ liệu © OpenStreetMap contributors (ODbL).</div>
+   <div class="small" style="margin-top:6px">Một ô duy nhất: gõ tên sân để tìm, hoặc dán thẳng tọa độ giữa sân (dạng "35.45, 140.29") để quét vùng ±1.5km quanh điểm đó — không cần đúng tên. Nếu sân đã được vẽ chi tiết trên OSM, app tự điền Par, chiều dài hố và GPS tee/green; chưa được vẽ thì dùng bản đồ vệ tinh bên dưới để tự đánh dấu. Tìm kiếm: Nominatim/Photon • Dữ liệu © OpenStreetMap contributors (ODbL).</div>
   </div>
   <button class="btn primary" style="width:100%;margin-top:10px" onclick="app.openEditorMap()">🗺️ Mở bản đồ vệ tinh — chạm để đánh dấu Tee/Green</button>
   <div class="small" style="margin-top:8px">Green GPS: <b>${c.holes.filter(h=>h.greenGps).length}/18</b> • Tee GPS: <b>${c.holes.filter(h=>h.teeGps).length}/18</b></div>
@@ -1691,19 +1696,35 @@ const app={
   const q=(document.getElementById('mapQ')?.value||'').trim(); if(q.length<2)return;
   const mc=q.match(/^(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/);
   if(mc&&lmap){lmap.setView([Number(mc[1]),Number(mc[2])],17);return}
+  const btn=document.getElementById('mapGoBtn');
+  if(btn){btn.disabled=true;btn.textContent='⏳'}
   toast('Đang tìm vị trí…');
   try{
-   const url='https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=1&accept-language=ja&q='+encodeURIComponent(q);
-   const j=await fetchJsonTimeout(url,9000);
-   if(Array.isArray(j)&&j[0]&&lmap){
-    const r0=j[0];
-    if(r0.boundingbox)lmap.fitBounds([[+r0.boundingbox[0],+r0.boundingbox[2]],[+r0.boundingbox[1],+r0.boundingbox[3]]]);
-    else lmap.setView([+r0.lat,+r0.lon],16);
-    toast('Đã bay đến: '+(r0.name||q));
-   }else toast('Không tìm thấy — thử dán tọa độ vào ô tìm kiếm dạng "35.45, 140.29"');
-  }catch(e){
-   const m=q.match(/(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)/);
-   if(m&&lmap){lmap.setView([Number(m[1]),Number(m[2])],16)}else toast('Không tìm được vị trí');
+   let target=null,label='';
+   try{
+    const j=await fetchJsonTimeout('https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=1&accept-language=ja&q='+encodeURIComponent(q),9000);
+    const r0=Array.isArray(j)&&j[0];
+    if(r0){label=r0.name||'';target=r0.boundingbox?{b:{minlat:+r0.boundingbox[0],maxlat:+r0.boundingbox[1],minlon:+r0.boundingbox[2],maxlon:+r0.boundingbox[3]}}:{lat:+r0.lat,lng:+r0.lon}}
+   }catch(e){}
+   if(!target){
+    try{
+     const j=await fetchJsonTimeout('https://photon.komoot.io/api/?limit=1&lang=default&q='+encodeURIComponent(q),9000);
+     const f=j&&j.features&&j.features[0];
+     if(f){
+      const p=f.properties||{},e2=p.extent,c=f.geometry&&f.geometry.coordinates;
+      label=p.name||'';
+      if(e2)target={b:{minlat:Math.min(e2[1],e2[3]),maxlat:Math.max(e2[1],e2[3]),minlon:Math.min(e2[0],e2[2]),maxlon:Math.max(e2[0],e2[2])}};
+      else if(c)target={lat:c[1],lng:c[0]};
+     }
+    }catch(e){}
+   }
+   if(target&&lmap){
+    if(target.b)lmap.fitBounds([[target.b.minlat,target.b.minlon],[target.b.maxlat,target.b.maxlon]]);
+    else lmap.setView([target.lat,target.lng],16);
+    toast('Đã bay đến'+(label?': '+label:' vị trí tìm được'));
+   }else toast('Không tìm thấy — thử tên khác, hoặc dán tọa độ dạng "35.45, 140.29"');
+  }finally{
+   if(btn){btn.disabled=false;btn.textContent='🔍'}
   }
  },
  cSetName(v){if(courseDraft)courseDraft.name=v},
@@ -1712,13 +1733,24 @@ const app={
  cSetLen(i,ti,v){if(!courseDraft)return;const t=courseDraft.tees[ti];if(t===undefined)return;courseDraft.holes[i].lengths[t]=v===''?'':num(v)},
  async osmSearch(){
   const q=(document.getElementById('osmQ')?.value||'').trim();
-  if(q.length<2){toast('Nhập tên sân (từ 2 ký tự)');return}
-  const box=document.getElementById('osmResults');
-  if(box)box.innerHTML='<div class="small" style="padding:6px 2px">Đang tìm trên OpenStreetMap…</div>';
+  if(q.length<2){toast('Nhập tên sân hoặc dán tọa độ');return}
+  const box=document.getElementById('osmResults'),btn=document.getElementById('osmSearchBtn');
+  const busy=on=>{if(btn){btn.disabled=on;btn.textContent=on?'Đang tìm…':'Tìm'}};
+  const mc=q.match(/^(-?\d{1,2}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)$/);
+  if(mc){
+   const lat=Number(mc[1]),lng=Number(mc[2]);
+   if(!(lat>=-90&&lat<=90&&lng>=-180&&lng<=180)){alert('Tọa độ không hợp lệ.');return}
+   busy(true);
+   try{const d=0.013;await osmImportBounds({minlat:lat-d,maxlat:lat+d,minlon:lng-d,maxlon:lng+d},null)}finally{busy(false)}
+   return;
+  }
+  busy(true);
+  if(box)box.innerHTML='<div class="small" style="padding:6px 2px">⏳ Đang tìm trên OpenStreetMap…</div>';
   try{
    osmResults=await osmSearchCourses(q);
-   if(box)box.innerHTML=osmResults.length?osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">OpenStreetMap${r.sub?` • ${esc(r.sub)}`:''}</span></button>`).join(''):'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn hoặc tên tiếng Nhật; nếu vẫn không có, sân chưa được vẽ trên OSM — dùng 📡/✎ bên dưới.</div>';
+   if(box)box.innerHTML=osmResults.length?osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">OpenStreetMap${r.sub?` • ${esc(r.sub)}`:''}</span></button>`).join(''):'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn / tên tiếng Nhật, hoặc dán tọa độ giữa sân vào cùng ô này (dạng "35.45, 140.29").</div>';
   }catch(e){if(box)box.innerHTML=`<div class="gps-warning">${esc(e.message)}</div>`}
+  finally{busy(false)}
  },
  async osmPick(i){
   const r=osmResults[i]; if(!r||!courseDraft)return;
