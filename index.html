@@ -157,6 +157,10 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 .gps-cell .small{line-height:1.4;overflow-wrap:anywhere}
 .gps-cell .row{flex-wrap:wrap}
 .green-dist-card{border-left:4px solid #176b45}
+.green-dist-sticky{position:sticky;top:calc(124px + env(safe-area-inset-top));z-index:17;padding:9px 11px;margin-bottom:10px;box-shadow:0 6px 18px rgba(24,58,40,.16)}
+.green-dist-inline{font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.green-dist-inline b{font-size:22px;color:var(--green)}
+@media(max-width:520px){.green-dist-sticky{top:calc(114px + env(safe-area-inset-top))}}
 .green-dist-val{margin-top:8px;font-size:14px}
 .green-dist-val b{font-size:26px;color:var(--green)}
 @media(max-width:520px){.gps-cell .btn{padding:5px 7px!important}}
@@ -882,7 +886,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=22, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=25, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -1067,11 +1071,11 @@ function renderRound(){
  el.innerHTML=`
  <div class="card round-head"><div class="row between"><div><div class="row" style="gap:7px;align-items:center"><h2>${esc(r.course)}</h2><button class="btn ghost compact" onclick="app.editRoundMeta()">✎ Sửa</button></div><div class="small">${esc(r.date)} • ${esc(r.tee)} • ${st.holes}/18 hố <span class="mode-badge ${r.mode==='simulation'?'sim':''}">${modeIcon(r.mode)} ${modeLabel(r.mode)}</span>${courseForRound(r)?`<span class="mode-badge">🗺️ GPS sân</span>`:''}</div></div><div class="score-badge">${st.holes?st.score:'–'}<div style="font-size:11px;font-weight:600">${st.holes?(st.delta>=0?'+':'')+st.delta:'score'}</div></div></div></div>
  <div class="hole-nav-fixed"><button class="btn ghost" ${currentHole===1?'disabled':''} onclick="app.goHole(${currentHole-1})">← H${Math.max(1,currentHole-1)}</button><div class="hole-nav-current"><b>Hole ${h.hole}</b><span>Par ${h.par} • ${h.length||'–'}y${hs!==''?` • Score ${hs}`:''}</span></div><button class="btn ghost" ${currentHole===18?'disabled':''} onclick="app.goHole(${currentHole+1})">H${Math.min(18,currentHole+1)} →</button></div>
- <div class="card"><div class="row between"><div class="hole-title">Hole ${h.hole}</div><button class="btn ghost" onclick="app.editHoleMeta()">Sửa hố</button></div><div class="metric-grid"><div class="metric"><b>Par ${h.par}</b><span>Par</span></div><div class="metric"><b>${h.length||'–'}y</b><span>Chiều dài</span></div><div class="metric"><b>${hs===''?'–':hs}</b><span>Score ${hd===''?'':`(${hd>=0?'+':''}${hd})`}</span></div></div>${h.target||h.strategy?`<div class="note" style="margin-top:10px"><b>Target ${esc(h.target||'–')}</b>${h.strategy?` • ${esc(h.strategy)}`:''}</div>`:''}</div>
  ${renderGreenDistanceCard(r,h)}
+ <div class="card"><div class="row between"><div class="hole-title">Hole ${h.hole}</div><button class="btn ghost" onclick="app.editHoleMeta()">Sửa hố</button></div><div class="metric-grid"><div class="metric"><b>Par ${h.par}</b><span>Par</span></div><div class="metric"><b>${h.length||'–'}y</b><span>Chiều dài</span></div><div class="metric"><b>${hs===''?'–':hs}</b><span>Score ${hd===''?'':`(${hd>=0?'+':''}${hd})`}</span></div></div>${h.target||h.strategy?`<div class="note" style="margin-top:10px"><b>Target ${esc(h.target||'–')}</b>${h.strategy?` • ${esc(h.strategy)}`:''}</div>`:''}</div>
  ${r.mode==='real'&&!window.isSecureContext?`<div class="card gps-context-note"><b>⚠️ GPS chưa sẵn sàng trong file local</b><div class="small">Chrome/Safari trên iPhone hạn chế Location với file HTML. Các chức năng ghi round vẫn dùng được; GPS cần bản chạy qua HTTPS.</div></div>`:''}
 
- <div class="card"><div class="section-title">Full swing</div><div class="small section-help">Nhập Contact + Hướng trước. Carry/Total chỉ cần nhập khi cú Clean + Thẳng; các cú khác có thể bỏ trống cự ly.</div>${renderShots(h)}<button class="btn primary section-add" onclick="app.addFullInline()">＋ Thêm Full shot</button></div>
+ <div class="card"><div class="section-title">Full swing</div><div class="small section-help">${r.mode==='real'?'Cú 1: bấm ⛳ Tee shot tại tee. Đánh xong, tới chỗ bóng bấm 🏁 Đến bóng — Total tự tính bằng GPS (sửa tay được), và app tự mở cú tiếp theo: còn ≤100y thì mở Approach, xa hơn thì thêm Full shot. Nếu bóng đã on green, chọn Kết quả = On green rồi ghi putt.':'Nhập Contact + Hướng trước. Carry/Total chỉ cần nhập khi cú Clean + Thẳng; các cú khác có thể bỏ trống cự ly.'}</div>${renderShots(h)}${r.mode==='real'&&!h.shots.length?`<button class="btn primary section-add" onclick="app.startTeeShot()">⛳ Tee shot — bắt đầu hố (lưu vị trí phát bóng)</button>`:`<button class="btn primary section-add" onclick="app.addFullInline()">＋ Thêm Full shot</button>`}</div>
  <div class="card"><div><div class="section-title">Approach ngắn ≤100y</div><div class="small">Pitch / Chip / bunker shot không full swing. Dùng section này khi cú còn lại khoảng ≤100y; không cần nhập Carry/Total.</div></div>${renderApproaches(h)}<button class="btn section-add" onclick="app.addApproachInline()">＋ Thêm Approach shot</button></div>
  <div class="card"><div class="row between"><div class="section-title">Putting</div><button class="btn" onclick="app.addPutt()">+ Putt</button></div>${renderPutts(h)}</div>
  <div class="card"><div class="score-calc">${(()=>{const b=holeScoreBreakdown(h);return `<b>Score ${b.total}</b><div class="small">= ${b.full+b.apps} cú đánh + ${b.putts} putt + ${b.obPen} OB penalty + ${b.otherAuto} penalty area/unplayable${b.manual?` + ${b.manual} penalty cũ`:''}</div>`})()}</div><div class="small" style="margin-top:7px">OB và Penalty area / unplayable được cộng tự động theo “Kết quả / lie”. Không cần nhập penalty riêng.</div><div class="field" style="margin-top:9px"><label>Ghi chú hố</label><textarea onchange="app.setHole('notes',this.value)" placeholder="Lie dốc, bunker, cảm giác swing...">${esc(h.notes)}</textarea></div></div>
@@ -1083,9 +1087,10 @@ function renderGreenDistanceCard(r,h){
  const g=greenGpsFor(r,h.hole);
  const d=greenDist&&greenDist.hole===h.hole?greenDist:null;
  const rec=d?recommendClub(r.mode,Math.round(d.yd)):null;
- return `<div class="card green-dist-card"><div class="row between"><div class="section-title" style="margin:0">🎯 Cự ly đến green</div><div class="row" style="gap:6px">${g?`<button class="btn gps-primary compact" onclick="app.measureToGreen()">📡 Đo</button>`:''}<button class="btn compact" onclick="app.openRoundMap()">🗺️ Map</button></div></div>
- ${g?(d?`<div class="green-dist-val"><b>${Math.round(d.yd)}y</b> đến green center <span class="small">• ${gpsAccuracyLabel(d.acc)}</span></div>${rec?`<div class="club-suggest" style="margin-top:7px">Gợi ý gậy: <b>${esc(rec.club)}</b> • TB ${(rec.avgTotal||rec.avgCarry).toFixed(0)}y</div>`:''}`:`<div class="small" style="margin-top:7px">Bấm 📡 Đo khi đứng tại bóng, hoặc 🗺️ Map để xem bản đồ vị trí + cự ly live.</div>`):`<div class="small" style="margin-top:7px">Hố này chưa có Green GPS — vào Cài đặt → Sửa sân → 🗺️ bản đồ vệ tinh để đánh dấu.</div>`}
- </div>`;
+ return `<div class="card green-dist-card green-dist-sticky"><div class="row between" style="gap:8px">
+  <div class="green-dist-inline">🎯 ${d?`<b>${Math.round(d.yd)}y</b>`:'<b>–</b>'}<span class="small"> ${g?(d?`${gpsAccuracyLabel(d.acc)}${rec?` • gợi ý <b>${esc(rec.club)}</b>`:''}`:'bấm 📡 đo đến green'):'hố chưa có green GPS'}</span></div>
+  <div class="row" style="gap:6px;flex:none">${g?`<button class="btn gps-primary compact" onclick="app.measureToGreen()">📡 Đo</button>`:''}<button class="btn compact" onclick="app.openRoundMap()">🗺️ Map</button></div>
+ </div></div>`;
 }
 async function measureToGreen(){
  const r=currentRound(); if(!r)return;
@@ -1163,43 +1168,84 @@ function renderGpsControls(s,i,r){
  if(r.mode!=='real')return '';
  const secure=window.isSecureContext===true;
  const localWarning=!secure?`<div class="gps-warning">⚠️ GPS trên iPhone cần mở app qua HTTPS. Khi mở file HTML local, Chrome/Safari có thể chặn Location.</div>`:'';
- if(!s.gpsStart){
-  const teePt=i===0?teeGpsFor(r,currentHole):null;
-  return `<div class="gps-box"><div class="gps-title">📍 GPS đo Total</div><div class="small">1) Đứng tại bóng → Bắt đầu GPS. 2) Tới bóng tiếp theo → Đến bóng.</div>${localWarning}<div class="gps-actions"><button class="btn gps-primary" onclick="app.startGpsShot(${i})">📍 Bắt đầu GPS</button><button class="btn gps-arrive" disabled title="Hãy lưu vị trí bắt đầu trước">🏁 Đến bóng</button></div>${teePt?`<button class="btn ghost" style="width:100%;margin-top:8px" onclick="app.useTeeStart(${i})">⛳ Bắt đầu từ vị trí tee đã đăng ký</button>`:''}</div>`;
- }
- if(s.gpsStart&&!s.gpsEnd){
-  return `<div class="gps-box active"><div class="gps-title">📍 Đã lưu vị trí bắt đầu</div><div class="small">${gpsAccuracyLabel(s.gpsStart.accuracy)} • ${new Date(s.gpsStart.ts).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>${localWarning}<div class="gps-actions"><button class="btn ghost" onclick="app.clearGpsShot(${i})">↺ Bắt đầu lại</button><button class="btn gps-arrive" onclick="app.arriveGpsShot(${i})">🏁 Đến bóng</button></div></div>`;
+ if(i===0){
+  if(!s.gpsStart){
+   return `<div class="gps-box"><div class="gps-title">⛳ Tee shot</div><div class="small">Đứng tại tee, bấm nút để lưu vị trí phát bóng${courseForRound(r)?' — vị trí tee của sân cũng được cập nhật theo':''}.</div>${localWarning}<button class="btn gps-primary" style="width:100%;margin-top:9px" onclick="app.startGpsShot(${i})">⛳ Tee shot — lưu vị trí phát bóng</button></div>`;
+  }
+  if(!s.gpsEnd){
+   return `<div class="gps-box active"><div class="gps-title">📍 Đã lưu vị trí tee</div><div class="small">${gpsAccuracyLabel(s.gpsStart.accuracy)} • ${new Date(s.gpsStart.ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}${num(s.remaining)?` • còn ${Math.round(num(s.remaining))}y đến green`:''} — tới chỗ bóng dừng, bấm <b>🏁 Đến bóng</b> ở phần cự ly bên dưới.</div>${localWarning}<button class="btn ghost compact" style="margin-top:8px" onclick="app.startGpsShot(${i})">↺ Đo lại vị trí tee</button></div>`;
+  }
+ }else if(!s.gpsEnd){
+  if(!s.gpsStart){
+   return `<div class="gps-box"><div class="small">ℹ️ Điểm bắt đầu cú này = vị trí bóng của cú trước, nhưng cú trước chưa đo GPS. Bấm 🏁 Đến bóng ở cú trước, hoặc nhập Total tay.</div></div>`;
+  }
+  return `<div class="gps-box active"><div class="small">📍 Điểm bắt đầu = vị trí bóng cú trước${num(s.remaining)?` • còn ${Math.round(num(s.remaining))}y đến green`:''}. Tới chỗ bóng dừng, bấm <b>🏁 Đến bóng</b> bên dưới.</div></div>`;
  }
  const yd=s.gpsDistanceYd!==''?num(s.gpsDistanceYd):gpsDistanceYards(s.gpsStart,s.gpsEnd);
  const acc=gpsCombinedAccuracy(s.gpsStart,s.gpsEnd);
  const weak=acc!==null&&acc>15;
- return `<div class="gps-box done ${weak?'weak':''}"><div class="gps-title">📍 GPS Total: <b>${yd!==null?Math.round(yd)+'y':'–'}</b></div><div class="small">${gpsAccuracyLabel(acc)}${weak?' • Có thể sửa Total thủ công nếu GPS lệch':''}</div>${localWarning}<div class="gps-actions"><button class="btn ghost" onclick="app.startGpsShot(${i})">📍 Đo lại</button><button class="btn gps-arrive" disabled>✓ Đã đo</button></div></div>`;
+ return `<div class="gps-box done ${weak?'weak':''}"><div class="gps-title">📍 GPS Total: <b>${yd!==null?Math.round(yd)+'y':'–'}</b></div><div class="small">${gpsAccuracyLabel(acc)}${weak?' • Có thể sửa Total thủ công nếu GPS lệch':''} • Bấm 🏁 Đến bóng để đo lại</div></div>`;
+}
+async function startTeeShot(){
+ const r=currentRound(); if(!r||r.mode!=='real')return;
+ const h=r.holes[currentHole-1];
+ if(!h.shots.length)app.addFullInline();
+ await startGpsShot(0);
 }
 async function startGpsShot(i){
  const r=currentRound(); if(!r||r.mode!=='real')return;
  const h=r.holes[currentHole-1],s=h.shots[i]; if(!s)return;
- toast('Đang lấy vị trí bắt đầu GPS…');
+ toast(i===0?'Đang lấy vị trí tee…':'Đang lấy vị trí bắt đầu GPS…');
  try{
   const p=await bestGpsPosition();
   s.gpsStart=gpsPointFromPosition(p); s.gpsEnd=null; s.gpsDistanceYd='';
   const g=greenGpsFor(r,currentHole);
   if(g)s.remaining=Math.round(gpsDistanceYards(s.gpsStart,g));
+  let teeUpdated=false;
+  if(i===0){
+   const c=courseForRound(r);
+   if(c&&c.holes[currentHole-1]){c.holes[currentHole-1].teeGps={...s.gpsStart};teeUpdated=true}
+  }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
-  toast(g?`Đã lưu điểm bắt đầu • còn ${s.remaining}y đến green`:`Đã lưu điểm bắt đầu • ±${Math.round(s.gpsStart.accuracy)}m`);
+  toast((i===0?'Đã lưu vị trí tee':'Đã lưu điểm bắt đầu')+(g?` • còn ${s.remaining}y đến green`:` • ±${Math.round(s.gpsStart.accuracy)}m`)+(teeUpdated?' • đã cập nhật tee của sân':''));
  }catch(e){alert(e.message||'Không lấy được GPS.')}
 }
 async function arriveGpsShot(i){
  const r=currentRound(); if(!r||r.mode!=='real')return;
- const h=r.holes[currentHole-1],s=h.shots[i]; if(!s||!s.gpsStart)return;
+ const h=r.holes[currentHole-1],s=h.shots[i]; if(!s)return;
+ if(!s.gpsStart){
+  const prev=h.shots[i-1];
+  if(prev&&prev.gpsEnd)s.gpsStart={...prev.gpsEnd};
+  else{alert(i===0?'Hãy bấm "⛳ Tee shot" trước để lưu vị trí phát bóng.':'Cú trước chưa có vị trí bóng (chưa bấm 🏁 Đến bóng), nên cú này không có điểm bắt đầu. Bạn có thể nhập Total tay.');return}
+ }
  toast('Đang lấy vị trí bóng hiện tại…');
  try{
   const p=await bestGpsPosition(),end=gpsPointFromPosition(p),yd=gpsDistanceYards(s.gpsStart,end);
   s.gpsEnd=end; s.gpsDistanceYd=Math.round(yd*10)/10; s.total=Math.round(yd);
   const g=greenGpsFor(r,currentHole);
-  if(g){const remYd=gpsDistanceYards(end,g);greenDist={hole:currentHole,yd:remYd,acc:Math.sqrt((num(end.accuracy)||0)**2+(num(g.accuracy)||0)**2)}}
+  let autoMsg='';
+  if(g){
+   const remYd=gpsDistanceYards(end,g);
+   greenDist={hole:currentHole,yd:remYd,acc:Math.sqrt((num(end.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
+   // Auto mở stroke tiếp theo: chỉ khi cú này là cú cuối cùng của hố (không phải đo lại)
+   const remNow=Math.round(remYd);
+   const isLastStrike=(i===h.shots.length-1)&&h.approaches.length===0;
+   if(isLastStrike&&PLAYABLE_OUTCOMES.includes(s.outcome)&&s.outcome!=='Green'){
+    if(remNow<=100){
+     const club=state.settings.clubs.includes('50°')?'50°':state.settings.clubs[0]||'Other';
+     h.approaches.push({remaining:remNow,club,type:'Pitch',carry:'',total:'',direction:'Thẳng',contact:'Clean',outcome:'Green',playable:true});
+     autoMsg=` • đã mở Approach (còn ${remNow}y)`;
+    }else{
+     const rec=recommendClub(r.mode,remNow);
+     const club=(rec&&rec.club)||(state.settings.clubs.includes('7i')?'7i':state.settings.clubs[0]||'Other');
+     h.shots.push({remaining:remNow,club,purpose:'Advance',carry:'',total:'',direction:'Thẳng',contact:'Clean',outcome:'Playable',playable:true,gpsStart:{...end},gpsEnd:null,gpsDistanceYd:''});
+     autoMsg=` • đã thêm cú tiếp theo (còn ${remNow}y)`;
+    }
+   }
+  }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
   const acc=gpsCombinedAccuracy(s.gpsStart,s.gpsEnd);
-  toast(g?`Total ${Math.round(yd)}y • còn ${Math.round(greenDist.yd)}y đến green`:`GPS Total ${Math.round(yd)}y • ${gpsAccuracyLabel(acc)}`);
+  toast((g?`Total ${Math.round(yd)}y • còn ${Math.round(greenDist.yd)}y đến green`:`GPS Total ${Math.round(yd)}y • ${gpsAccuracyLabel(acc)}`)+autoMsg);
  }catch(e){alert(e.message||'Không lấy được GPS.')}
 }
 function clearGpsShot(i){
@@ -1211,6 +1257,7 @@ function clearGpsShot(i){
 
 function renderShots(h){
  if(!h.shots.length)return `<div class="empty compact-empty">Chưa có full swing.</div>`;
+ const rr=currentRound(),isReal=rr&&rr.mode==='real';
  let penaltiesBefore=0;
  return h.shots.map((s,i)=>{
   const scoreStroke=i+1+penaltiesBefore;
@@ -1239,11 +1286,16 @@ function renderShots(h){
 
    ${isPlayable?`
    <div class="distance-optional ${refEligible?'eligible':'skip-distance'}">
-    <div class="small">${refEligible?'✓ Playable + Clean + Thẳng: Carry/Total sẽ được dùng cho thống kê cự ly gậy.':'Playable nhưng không Clean + Thẳng: Carry/Total có thể nhập để lưu lịch sử, nhưng không tính vào cự ly TB/Max.'}</div>
+    <div class="small">${isReal?(refEligible?'✓ Playable + Clean + Thẳng: Total được tính vào thống kê cự ly gậy.':'Không Clean + Thẳng: Total lưu lịch sử nhưng không tính vào cự ly TB/Max.'):(refEligible?'✓ Playable + Clean + Thẳng: Carry/Total sẽ được dùng cho thống kê cự ly gậy.':'Playable nhưng không Clean + Thẳng: Carry/Total có thể nhập để lưu lịch sử, nhưng không tính vào cự ly TB/Max.')}</div>
+    ${isReal?`
+    <div class="grid2" style="margin-top:7px">
+     <div class="field"><label>&nbsp;</label><button class="btn gps-arrive" style="width:100%" onclick="app.arriveGpsShot(${i})">🏁 Đến bóng</button></div>
+     <div class="field"><label>Total (yd)</label><input inputmode="decimal" type="number" value="${s.total||''}" onchange="app.setShot(${i},'total',this.value)"></div>
+    </div>`:`
     <div class="grid2" style="margin-top:7px">
      <div class="field"><label>Carry (yd) <span class="optional-tag">tùy chọn</span></label><input inputmode="decimal" type="number" value="${s.carry||''}" onchange="app.setShot(${i},'carry',this.value)"></div>
      <div class="field"><label>Total (yd) <span class="optional-tag">tùy chọn</span></label><input inputmode="decimal" type="number" value="${s.total||''}" onchange="app.setShot(${i},'total',this.value)"></div>
-    </div>
+    </div>`}
    </div>`:`
    <div class="distance-skipped">Không phải nhóm Playable / On green / Fringe → không cần nhập Carry/Total.</div>`}
 
@@ -1401,17 +1453,44 @@ async function osmImportBounds(bounds,name){
   else alert(`Đã điền từ OSM:\n• ${s.holes} hố (đường chơi)\n• ${s.pars} hố có Par\n• ${s.greens} Green GPS\n• ${s.tees} Tee GPS\n\nChiều dài hố đo theo đường chơi trên bản đồ, điền vào tee "${courseDraft.tees[0]}" — đối chiếu scorecard chính thức nếu lệch. Bấm "Mở bản đồ vệ tinh" để kiểm tra/chỉnh vị trí các điểm.`);
  }catch(e){alert(e.message||'Không tải được dữ liệu OSM.')}
 }
+function osmDedupeResults(arr){
+ const seen=new Set(),out=[];
+ arr.forEach(r=>{
+  if(!r||!r.bounds)return;
+  const idKey=r.id?((String(r.type||'')[0]||'').toLowerCase()+':'+r.id):null;
+  const cKey='c:'+Math.round((r.bounds.minlat+r.bounds.maxlat)*500)+','+Math.round((r.bounds.minlon+r.bounds.maxlon)*500);
+  if(idKey&&seen.has(idKey))return;
+  if(seen.has(cKey))return;
+  if(idKey)seen.add(idKey);
+  seen.add(cKey);
+  out.push(r);
+ });
+ return out;
+}
 async function osmSearchCourses(q){
- // Tìm tên bằng geocoder (nhanh); Overpass chỉ là phương án cuối vì có thể phải xếp hàng chờ lâu.
- let errs=0,lastErr=null;
- for(const fn of [searchNominatim,searchPhoton]){
-  try{const r=await fn(q);if(r.length)return r}catch(e){errs++;lastErr=e}
+ // Gộp kết quả cả Nominatim lẫn Photon (cùng tên có thể có nhiều sân ở tỉnh khác nhau);
+ // Overpass chỉ là phương án cuối vì có thể phải xếp hàng chờ lâu.
+ const qq=String(q||'').replace(/　/g,' ').trim();
+ let results=[],errs=0,lastErr=null;
+ const settled=await Promise.allSettled([searchNominatim(qq),searchPhoton(qq)]);
+ settled.forEach(s=>{if(s.status==='fulfilled')results=results.concat(s.value);else{errs++;lastErr=s.reason}});
+ // Tên đầy đủ không ra (vd "ムーンレイクゴルフクラブ 市原コース") → thử lại với phần tên chính
+ if(!results.length){
+  const retries=[];
+  if(/\s/.test(qq))retries.push(qq.split(/\s+/)[0]);
+  const stripped=qq.replace(/(ゴルフ(クラブ|倶楽部|コース)|カントリー(クラブ|倶楽部)|カンツリー(クラブ|倶楽部)|CC|GC|golf\s*(club|course)|country\s*club).*$/i,'').trim();
+  if(stripped&&stripped!==qq&&stripped.length>=2&&!retries.includes(stripped))retries.push(stripped);
+  for(const rq of retries){
+   const s2=await Promise.allSettled([searchNominatim(rq),searchPhoton(rq)]);
+   s2.forEach(s=>{if(s.status==='fulfilled')results=results.concat(s.value)});
+   if(results.length)break;
+  }
  }
- if(errs===2){
-  try{return await searchOverpassByName(q)}
+ if(!results.length&&errs===2){
+  try{return await searchOverpassByName(qq)}
   catch(e){throw new Error('Không kết nối được dịch vụ tìm kiếm OpenStreetMap ('+((lastErr&&lastErr.message)||'network')+'). '+osmConnectionHint())}
  }
- return [];
+ return osmDedupeResults(results);
 }
 async function osmFetchCourseData(b){
  const pad=0.002, bbox=`${b.minlat-pad},${b.minlon-pad},${b.maxlat+pad},${b.maxlon+pad}`;
@@ -1709,7 +1788,7 @@ function confirmDeleteRound(id){
 
 const app={
  switchTab,closeModal,openNewRound,editRoundMeta,editHoleMeta,openAddShotModal,openAddApproachModal,startGpsShot,arriveGpsShot,clearGpsShot,requestDeleteRound,confirmDeleteRound,
- openCourseEditor,cancelCourseEdit,saveCourse,captureCourseGps,manualCourseGps,clearCourseGps,requestDeleteCourse,confirmDeleteCourse,measureToGreen,useTeeStart,
+ openCourseEditor,cancelCourseEdit,saveCourse,captureCourseGps,manualCourseGps,clearCourseGps,requestDeleteCourse,confirmDeleteCourse,measureToGreen,useTeeStart,startTeeShot,
  openEditorMap,openRoundMap,closeMap,
  mapGoHole(n){mapHole=n;const c=mapCourse();const h=c&&c.holes[n-1];const p=h&&(mapCtx==='round'?h.greenGps:(h.greenGps||h.teeGps));if(p&&lmap)lmap.panTo([p.lat,p.lng]);refreshMapUI()},
  mapSetTarget(t){mapTarget=t;refreshMapUI()},
@@ -1773,7 +1852,7 @@ const app={
   if(box)box.innerHTML='<div class="small" style="padding:6px 2px">⏳ Đang tìm trên OpenStreetMap…</div>';
   try{
    osmResults=await osmSearchCourses(q);
-   if(box)box.innerHTML=osmResults.length?osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">OpenStreetMap${r.sub?` • ${esc(r.sub)}`:''}</span></button>`).join(''):'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn / tên tiếng Nhật, hoặc dán tọa độ giữa sân vào cùng ô này (dạng "35.45, 140.29").</div>';
+   if(box)box.innerHTML=osmResults.length?`${osmResults.length>1?'<div class="small" style="padding:2px 2px 7px">⚠️ Cùng tên có thể có nhiều sân ở tỉnh khác nhau — kiểm tra <b>địa danh</b> trước khi chọn. Không thấy sân đúng vùng? Dán tọa độ giữa sân vào ô tìm.</div>':''}${osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">${r.sub?`📍 <b>${esc(r.sub)}</b> • `:''}OpenStreetMap</span></button>`).join('')}`:'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn / tên tiếng Nhật, hoặc dán tọa độ giữa sân vào cùng ô này (dạng "35.45, 140.29").</div>';
   }catch(e){if(box)box.innerHTML=`<div class="gps-warning">${esc(e.message)}</div>`}
   finally{busy(false)}
  },
@@ -1805,7 +1884,14 @@ const app={
  createRound(){const token=document.getElementById('nrTemplateId').value,name=document.getElementById('nrCourse').value.trim()||'Round mới',date=document.getElementById('nrDate').value,tee=document.getElementById('nrTee').value.trim()||'Regular',mode=document.getElementById('nrMode').value||'real';let r;if(token==='preset:nouvelle')r=makeRound(name,date,tee,'nouvelle',mode);else if(token.startsWith('course:')){const c=state.courses.find(x=>x.id===token.slice(7));r=c?makeRoundFromCourse(c,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else if(token.startsWith('round:')){const src=state.rounds.find(x=>x.id===token.slice(6));r=src?makeRoundFromTemplate(src,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else r=makeRound(name,date,tee,'blank',mode);state.rounds.push(r);state.currentRoundId=r.id;currentHole=1;saveState();closeModal();render();toast('Đã tạo round')},
  saveRoundMeta(){const r=currentRound();if(!r)return;r.course=document.getElementById('rmCourse').value.trim()||'Round mới';r.date=document.getElementById('rmDate').value||today();r.tee=document.getElementById('rmTee').value.trim()||'Regular';r.mode=document.getElementById('rmMode').value||'real';saveState();closeModal();render();toast('Đã cập nhật round')},
  goHole(n){if(n<1||n>18)return;currentHole=n;greenDist=null;renderRound();window.scrollTo(0,0)},
- addFullInline(){const h=currentRound().holes[currentHole-1],club=h.shots.length===0&&state.settings.clubs.includes('Driver')?'Driver':(state.settings.clubs.includes('7i')?'7i':state.settings.clubs[0]||'Other');h.shots.push({remaining:'',club,purpose:h.shots.length===0?'Tee':'Advance',carry:'',total:'',direction:'Thẳng',contact:'Clean',outcome:'Playable',playable:true,gpsStart:null,gpsEnd:null,gpsDistanceYd:''});const y=window.scrollY;saveState();renderRound();requestAnimationFrame(()=>window.scrollTo(0,y))},
+ addFullInline(){
+  const r=currentRound(),h=r.holes[currentHole-1],club=h.shots.length===0&&state.settings.clubs.includes('Driver')?'Driver':(state.settings.clubs.includes('7i')?'7i':state.settings.clubs[0]||'Other');
+  const prev=h.shots[h.shots.length-1];
+  const chain=(r.mode==='real'&&prev&&prev.gpsEnd)?{...prev.gpsEnd}:null;
+  let rem='';
+  if(chain){const g=greenGpsFor(r,currentHole);if(g)rem=Math.round(gpsDistanceYards(chain,g))}
+  h.shots.push({remaining:rem,club,purpose:h.shots.length===0?'Tee':'Advance',carry:'',total:'',direction:'Thẳng',contact:'Clean',outcome:'Playable',playable:true,gpsStart:chain,gpsEnd:null,gpsDistanceYd:''});
+  const y=window.scrollY;saveState();renderRound();requestAnimationFrame(()=>window.scrollTo(0,y))},
  addApproachInline(){const h=currentRound().holes[currentHole-1],club=state.settings.clubs.includes('50°')?'50°':state.settings.clubs[0]||'Other';h.approaches.push({remaining:'',club,type:'Pitch',carry:'',total:'',direction:'Thẳng',contact:'Clean',outcome:'Green',playable:true});const y=window.scrollY;saveState();renderRound();requestAnimationFrame(()=>window.scrollTo(0,y))},
  setHole(k,v){const h=currentRound().holes[currentHole-1];h[k]=k==='manualPenalty'?num(v):v;saveState()},
  saveHoleMeta(){const h=currentRound().holes[currentHole-1];h.par=num(document.getElementById('hmPar').value)||4;h.length=num(document.getElementById('hmLen').value)||'';h.target=document.getElementById('hmTarget').value;h.strategy=document.getElementById('hmStrategy').value;saveState();closeModal();renderRound()},
