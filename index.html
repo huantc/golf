@@ -882,7 +882,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=20, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=21, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -919,12 +919,13 @@ function migrateRound(r){r.mode=r.mode||'real'; r.courseId=r.courseId||null; r.h
 function migrateCourse(c){
  c.id=c.id||uid(); c.name=c.name||'Sân';
  c.tees=Array.isArray(c.tees)&&c.tees.length?c.tees:['Regular'];
+ c.center=(c.center&&typeof c.center.lat==='number'&&typeof c.center.lng==='number')?c.center:null;
  c.holes=Array.isArray(c.holes)?c.holes:[];
  while(c.holes.length<18)c.holes.push({hole:c.holes.length+1,par:4,lengths:{},teeGps:null,greenGps:null});
  c.holes=c.holes.slice(0,18).map((h,i)=>({hole:i+1,par:num(h.par)||4,lengths:(h.lengths&&typeof h.lengths==='object')?h.lengths:{},teeGps:h.teeGps||null,greenGps:h.greenGps||null}));
  return c;
 }
-function makeCourse(name){return {id:uid(),name:name||'',createdAt:new Date().toISOString(),tees:['Regular'],holes:Array.from({length:18},(_,i)=>({hole:i+1,par:4,lengths:{},teeGps:null,greenGps:null}))}}
+function makeCourse(name){return {id:uid(),name:name||'',createdAt:new Date().toISOString(),tees:['Regular'],center:null,holes:Array.from({length:18},(_,i)=>({hole:i+1,par:4,lengths:{},teeGps:null,greenGps:null}))}}
 function makeCourseFromRound(r){
  const c=makeCourse(r.course), tee=r.tee||'Regular'; c.tees=[tee];
  c.holes=r.holes.map((h,i)=>({hole:i+1,par:num(h.par)||4,lengths:num(h.length)?{[tee]:num(h.length)}:{},teeGps:null,greenGps:null}));
@@ -1372,10 +1373,14 @@ async function osmImportBounds(bounds,name){
  try{
   const data=await osmFetchCourseData(bounds);
   if(name&&!(courseDraft.name||'').trim())courseDraft.name=name;
+  courseDraft.center={lat:(bounds.minlat+bounds.maxlat)/2,lng:(bounds.minlon+bounds.maxlon)/2};
   const s=osmApplyToDraft(data);
   const y=window.scrollY;renderSettings();requestAnimationFrame(()=>window.scrollTo(0,y));
-  if(!s.holes&&!s.greens)alert('Khu vực này chưa được vẽ chi tiết hố/green/tee trên OSM.\nHai lựa chọn: tự vẽ đóng góp tại openstreetmap.org (dùng ảnh nền được phép trong trình vẽ), hoặc đăng ký bằng 📡/✎ — chỉ cần Green GPS của 18 hố là đủ dùng tính cự ly.');
-  else alert(`Đã điền từ OSM:\n• ${s.holes} hố (đường chơi)\n• ${s.pars} hố có Par\n• ${s.greens} Green GPS\n• ${s.tees} Tee GPS\n\nChiều dài hố đo theo đường chơi trên bản đồ, điền vào tee "${courseDraft.tees[0]}". Hãy đối chiếu scorecard chính thức và chỉnh lại nếu lệch.`);
+  if(!s.holes&&!s.greens){
+   toast('Sân chưa được vẽ trên OSM — đã mở bản đồ vệ tinh, chạm để đánh dấu green');
+   openEditorMap();
+  }
+  else alert(`Đã điền từ OSM:\n• ${s.holes} hố (đường chơi)\n• ${s.pars} hố có Par\n• ${s.greens} Green GPS\n• ${s.tees} Tee GPS\n\nChiều dài hố đo theo đường chơi trên bản đồ, điền vào tee "${courseDraft.tees[0]}" — đối chiếu scorecard chính thức nếu lệch. Bấm "Mở bản đồ vệ tinh" để kiểm tra/chỉnh vị trí các điểm.`);
  }catch(e){alert(e.message||'Không tải được dữ liệu OSM.')}
 }
 async function osmSearchCourses(q){
@@ -1511,9 +1516,9 @@ function openEditorMap(){
  if(!hasLeaflet()){alert('Không tải được thư viện bản đồ.');return}
  mapCtx='editor'; mapTarget='green';
  const idx=courseDraft.holes.findIndex(h=>!h.greenGps); mapHole=idx>=0?idx+1:1;
- openMapShell(`<button class="btn compact" onclick="app.closeMap()">✕ Xong</button><input id="mapQ" placeholder="Tên sân hoặc tọa độ để bay đến…" onkeydown="if(event.key==='Enter')app.mapSearchGo()"><button class="btn compact" id="mapGoBtn" onclick="app.mapSearchGo()">🔍</button>`);
- const fp=firstCoursePoint(courseDraft);
- initLeaflet(fp?[fp.lat,fp.lng]:[36.2048,138.2529],fp?17:5);
+ openMapShell(`<button class="btn compact" onclick="app.closeMap()">✕ Xong</button><input id="mapQ" placeholder="(Tùy chọn) bay đến địa điểm khác…" onkeydown="if(event.key==='Enter')app.mapSearchGo()"><button class="btn compact" id="mapGoBtn" onclick="app.mapSearchGo()">🔍</button>`);
+ const fp=firstCoursePoint(courseDraft)||courseDraft.center||null;
+ initLeaflet(fp?[fp.lat,fp.lng]:[36.2048,138.2529],fp?16:5);
  lmap.on('click',e=>{
   const h=courseDraft.holes[mapHole-1];
   h[mapTarget==='tee'?'teeGps':'greenGps']={lat:e.latlng.lat,lng:e.latlng.lng,accuracy:0,ts:Date.now()};
@@ -1587,13 +1592,13 @@ function renderCourseEditor(){
   <div class="field" style="margin-top:10px"><label>Tên sân</label><input value="${esc(c.name)}" onchange="app.cSetName(this.value)" placeholder="Ví dụ: Glissando Golf Club"></div>
   <div class="field" style="margin-top:9px"><label>Các tee (phân cách bằng dấu phẩy)</label><input value="${esc(c.tees.join(', '))}" onchange="app.cSetTees(this.value)" placeholder="Regular, Back, Ladies"></div>
   <div class="osm-box">
-   <label>🔎 Lấy dữ liệu miễn phí từ OpenStreetMap</label>
+   <label>① Tìm sân tại đây (tên sân, hoặc tọa độ)</label>
    <div class="row" style="gap:8px"><input id="osmQ" placeholder="Tên sân, hoặc tọa độ giữa sân: 35.45, 140.29" onkeydown="if(event.key==='Enter')app.osmSearch()"><button class="btn primary" id="osmSearchBtn" style="min-width:74px" onclick="app.osmSearch()">Tìm</button></div>
    ${(()=>{let f=false;try{f=window.self!==window.top}catch(e){f=true}return f?'<div class="gps-warning" style="margin-top:7px">⚠️ App đang chạy trong khung xem trước — tìm OSM và GPS không hoạt động ở đây. Hãy tải file về, mở bằng Safari/Chrome hoặc đưa lên HTTPS.</div>':''})()}
    <div id="osmResults" style="margin-top:7px;max-height:230px;overflow:auto"></div>
-   <div class="small" style="margin-top:6px">Một ô duy nhất: gõ tên sân để tìm, hoặc dán thẳng tọa độ giữa sân (dạng "35.45, 140.29") để quét vùng ±1.5km quanh điểm đó — không cần đúng tên. Nếu sân đã được vẽ chi tiết trên OSM, app tự điền Par, chiều dài hố và GPS tee/green; chưa được vẽ thì dùng bản đồ vệ tinh bên dưới để tự đánh dấu. Tìm kiếm: Nominatim/Photon • Dữ liệu © OpenStreetMap contributors (ODbL).</div>
+   <div class="small" style="margin-top:6px">Chỉ cần tìm ở ô này — gõ tên sân, hoặc dán tọa độ giữa sân dạng "35.45, 140.29". Nếu sân đã được vẽ chi tiết trên OSM, app tự điền Par/chiều dài/GPS; nếu chưa, <b>bản đồ vệ tinh sẽ tự mở đúng vị trí sân</b> để bạn chạm đánh dấu green. Ô tìm bên trong bản đồ chỉ là phụ, không cần dùng. Tìm kiếm: Nominatim/Photon • Dữ liệu © OpenStreetMap contributors (ODbL).</div>
   </div>
-  <button class="btn primary" style="width:100%;margin-top:10px" onclick="app.openEditorMap()">🗺️ Mở bản đồ vệ tinh — chạm để đánh dấu Tee/Green</button>
+  <button class="btn primary" style="width:100%;margin-top:10px" onclick="app.openEditorMap()">② 🗺️ Mở bản đồ vệ tinh — chạm để đánh dấu Tee/Green</button>
   <div class="small" style="margin-top:8px">Green GPS: <b>${c.holes.filter(h=>h.greenGps).length}/18</b> • Tee GPS: <b>${c.holes.filter(h=>h.teeGps).length}/18</b></div>
   <div class="note" style="margin-top:9px">📡 Tại đây = lấy GPS ở vị trí đang đứng (làm khi ra sân, đứng giữa green / tại tee). ✎ Nhập = dán tọa độ "lat, lng" copy từ Google Maps (nhấn giữ vào điểm trên bản đồ để lấy tọa độ).</div>
   ${!window.isSecureContext?'<div class="gps-warning" style="margin-top:8px">⚠️ Nút 📡 cần app chạy qua HTTPS; khi mở file local hãy dùng ✎ Nhập tọa độ.</div>':''}
