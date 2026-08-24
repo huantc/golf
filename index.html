@@ -186,7 +186,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 <script>
 (() => {
 'use strict';
-const VERSION=16, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=17, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -618,15 +618,68 @@ async function overpassQuery(ql){
  throw new Error('Không kết nối được OpenStreetMap ('+(lastErr&&lastErr.message||'network')+'). '+osmConnectionHint());
 }
 function osmEscapeRegex(s){return s.replace(/[.*+?^${}()|[\]\\"]/g,'\\$&')}
-async function osmSearchCourses(q){
+async function fetchJsonTimeout(url,ms){
+ const ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),ms);
+ try{
+  const res=await fetch(url,{signal:ctl.signal});
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  return await res.json();
+ }catch(e){throw (e&&e.name==='AbortError')?new Error('timeout'):e}
+ finally{clearTimeout(timer)}
+}
+function osmPadBounds(b){
+ const minSpan=0.012;
+ let {minlat,minlon,maxlat,maxlon}=b;
+ if(maxlat-minlat<minSpan){const c=(maxlat+minlat)/2;minlat=c-minSpan/2;maxlat=c+minSpan/2}
+ if(maxlon-minlon<minSpan){const c=(maxlon+minlon)/2;minlon=c-minSpan/2;maxlon=c+minSpan/2}
+ return {minlat,minlon,maxlat,maxlon};
+}
+function looksGolf(s){return /golf|ゴルフ|カントリー|カンツリー|country\s*club|カレッジ|リンクス/i.test(s||'')}
+async function searchNominatim(q){
+ const url='https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=12&accept-language=ja&q='+encodeURIComponent(q);
+ const j=await fetchJsonTimeout(url,9000);
+ return (Array.isArray(j)?j:[]).filter(r=>{
+  const cls=r.class||r.category;
+  return r.boundingbox&&((cls==='leisure'&&r.type==='golf_course')||looksGolf(r.display_name)||looksGolf(r.name));
+ }).map(r=>({
+  id:r.osm_id,type:r.osm_type,
+  name:r.name||String(r.display_name||'').split(',')[0].trim(),
+  sub:String(r.display_name||'').split(',').slice(1,3).map(x=>x.trim()).filter(Boolean).join(', '),
+  bounds:osmPadBounds({minlat:+r.boundingbox[0],maxlat:+r.boundingbox[1],minlon:+r.boundingbox[2],maxlon:+r.boundingbox[3]}),
+  src:'Nominatim'
+ }));
+}
+async function searchPhoton(q){
+ const url='https://photon.komoot.io/api/?limit=12&lang=default&osm_tag=leisure%3Agolf_course&q='+encodeURIComponent(q);
+ const j=await fetchJsonTimeout(url,9000);
+ return ((j&&j.features)||[]).map(f=>{
+  const p=f.properties||{}, e=p.extent, c=f.geometry&&f.geometry.coordinates;
+  let b=e?{minlon:Math.min(e[0],e[2]),maxlon:Math.max(e[0],e[2]),minlat:Math.min(e[1],e[3]),maxlat:Math.max(e[1],e[3])}:(c?{minlon:c[0],maxlon:c[0],minlat:c[1],maxlat:c[1]}:null);
+  if(!b)return null;
+  return {id:p.osm_id,type:p.osm_type,name:p.name||('OSM '+p.osm_id),sub:[p.city,p.state].filter(Boolean).join(', '),bounds:osmPadBounds(b),src:'Photon'};
+ }).filter(Boolean);
+}
+async function searchOverpassByName(q){
  const ql=`[out:json][timeout:25];area["ISO3166-1"="JP"][admin_level=2]->.jp;nwr["leisure"="golf_course"]["name"~"${osmEscapeRegex(q)}",i](area.jp);out tags bb 20;`;
  const j=await overpassQuery(ql);
  return (j.elements||[]).map(e=>{
   let b=e.bounds;
   if(!b&&e.lat!==undefined&&e.lon!==undefined)b={minlat:e.lat-.008,minlon:e.lon-.008,maxlat:e.lat+.008,maxlon:e.lon+.008};
   if(!b)return null;
-  return {id:e.id,type:e.type,name:(e.tags&&(e.tags.name||e.tags['name:en']))||('OSM '+e.id),nameEn:(e.tags&&e.tags['name:en'])||'',bounds:b};
+  return {id:e.id,type:e.type,name:(e.tags&&(e.tags.name||e.tags['name:en']))||('OSM '+e.id),sub:(e.tags&&e.tags['name:en'])||'',bounds:b,src:'Overpass'};
  }).filter(Boolean);
+}
+async function osmSearchCourses(q){
+ // Tìm tên bằng geocoder (nhanh); Overpass chỉ là phương án cuối vì có thể phải xếp hàng chờ lâu.
+ let errs=0,lastErr=null;
+ for(const fn of [searchNominatim,searchPhoton]){
+  try{const r=await fn(q);if(r.length)return r}catch(e){errs++;lastErr=e}
+ }
+ if(errs===2){
+  try{return await searchOverpassByName(q)}
+  catch(e){throw new Error('Không kết nối được dịch vụ tìm kiếm OpenStreetMap ('+((lastErr&&lastErr.message)||'network')+'). '+osmConnectionHint())}
+ }
+ return [];
 }
 async function osmFetchCourseData(b){
  const pad=0.002, bbox=`${b.minlat-pad},${b.minlon-pad},${b.maxlat+pad},${b.maxlon+pad}`;
@@ -700,7 +753,7 @@ function renderCourseEditor(){
    <div class="row" style="gap:8px"><input id="osmQ" placeholder="Tên sân (tiếng Nhật thường tìm trúng hơn)…" onkeydown="if(event.key==='Enter')app.osmSearch()"><button class="btn primary" style="min-width:74px" onclick="app.osmSearch()">Tìm</button></div>
    ${(()=>{let f=false;try{f=window.self!==window.top}catch(e){f=true}return f?'<div class="gps-warning" style="margin-top:7px">⚠️ App đang chạy trong khung xem trước — tìm OSM và GPS không hoạt động ở đây. Hãy tải file về, mở bằng Safari/Chrome hoặc đưa lên HTTPS.</div>':''})()}
    <div id="osmResults" style="margin-top:7px;max-height:230px;overflow:auto"></div>
-   <div class="small" style="margin-top:6px">Tự điền Par, chiều dài hố (đo theo đường chơi trên bản đồ) và GPS tee/green nếu sân đã được vẽ chi tiết trên OSM. Độ phủ sân Nhật chưa đều — sân chưa được vẽ thì dùng 📡/✎ bên dưới. Dữ liệu © OpenStreetMap contributors (ODbL).</div>
+   <div class="small" style="margin-top:6px">Tự điền Par, chiều dài hố (đo theo đường chơi trên bản đồ) và GPS tee/green nếu sân đã được vẽ chi tiết trên OSM. Độ phủ sân Nhật chưa đều — sân chưa được vẽ thì dùng 📡/✎ bên dưới. Tìm kiếm qua Nominatim/Photon; dữ liệu © OpenStreetMap contributors (ODbL).</div>
   </div>
   <div class="small" style="margin-top:8px">Green GPS: <b>${c.holes.filter(h=>h.greenGps).length}/18</b> • Tee GPS: <b>${c.holes.filter(h=>h.teeGps).length}/18</b></div>
   <div class="note" style="margin-top:9px">📡 Tại đây = lấy GPS ở vị trí đang đứng (làm khi ra sân, đứng giữa green / tại tee). ✎ Nhập = dán tọa độ "lat, lng" copy từ Google Maps (nhấn giữ vào điểm trên bản đồ để lấy tọa độ).</div>
@@ -801,7 +854,7 @@ const app={
   if(box)box.innerHTML='<div class="small" style="padding:6px 2px">Đang tìm trên OpenStreetMap…</div>';
   try{
    osmResults=await osmSearchCourses(q);
-   if(box)box.innerHTML=osmResults.length?osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">OpenStreetMap • ${r.type}/${r.id}${r.nameEn?` • ${esc(r.nameEn)}`:''}</span></button>`).join(''):'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn hoặc tên tiếng Nhật; nếu vẫn không có, sân chưa được vẽ trên OSM — dùng 📡/✎ bên dưới.</div>';
+   if(box)box.innerHTML=osmResults.length?osmResults.map((r,i)=>`<button type="button" class="btn ghost course-result" onclick="app.osmPick(${i})"><b>${esc(r.name)}</b><br><span class="small">OpenStreetMap${r.sub?` • ${esc(r.sub)}`:''}</span></button>`).join(''):'<div class="small" style="padding:6px 2px">Không tìm thấy sân này trên OSM. Thử từ khóa ngắn hơn hoặc tên tiếng Nhật; nếu vẫn không có, sân chưa được vẽ trên OSM — dùng 📡/✎ bên dưới.</div>';
   }catch(e){if(box)box.innerHTML=`<div class="gps-warning">${esc(e.message)}</div>`}
  },
  async osmPick(i){
