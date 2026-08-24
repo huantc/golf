@@ -180,6 +180,8 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 .hole-pick.cur.done{background:var(--green)}
 .kpi.hl{background:var(--green);border-color:var(--green)}
 .kpi.hl .v,.kpi.hl .l{color:#fff}
+.kpi.hl .v{font-size:34px}
+#pageStats .kpis{margin-bottom:12px}
 @media(max-width:520px){.round-head-sticky{top:calc(50px + env(safe-area-inset-top))}.hole-head-merged{top:calc(110px + env(safe-area-inset-top))}}
 .green-dist-val{margin-top:8px;font-size:14px}
 .green-dist-val b{font-size:26px;color:var(--green)}
@@ -906,7 +908,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=27, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=28, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -1136,39 +1138,19 @@ function renderRound(){
  <div class="card"><div class="row between"><div class="section-title">Putting</div><button class="btn" onclick="app.addPutt()">+ Putt</button></div>${renderPutts(h)}</div>
  <div class="card"><div class="score-calc">${(()=>{const b=holeScoreBreakdown(h);return `<b>Score ${b.total}</b><div class="small">= ${b.full+b.apps} cú đánh + ${b.putts} putt + ${b.obPen} OB penalty + ${b.otherAuto} penalty area/unplayable${b.manual?` + ${b.manual} penalty cũ`:''}</div>`})()}</div><div class="small" style="margin-top:7px">OB và Penalty area / unplayable được cộng tự động theo “Kết quả / lie”. Không cần nhập penalty riêng.</div><div class="field" style="margin-top:9px"><label>Ghi chú hố</label><textarea onchange="app.setHole('notes',this.value)" placeholder="Lie dốc, bunker, cảm giác swing...">${esc(h.notes)}</textarea></div></div>
 `;
- if(r.mode==='real'&&courseForRound(r)&&r.holes.some(x=>(x.shots||[]).some(s2=>s2.gpsStart)))startRoundWatch();
 }
 
 function greenRowInner(r,h){
  const g=greenGpsFor(r,h.hole);
  const d=greenDist&&greenDist.hole===h.hole?greenDist:null;
  const rec=d?recommendClub(r.mode,Math.round(d.yd)):null;
- return `🎯 ${d?`<b>${Math.round(d.yd)}y</b>`:'<b>–</b>'}<span class="small"> ${g?(d?`${gpsAccuracyLabel(d.acc)}${rec?` • gợi ý <b>${esc(rec.club)}</b>`:''}`:'GPS đo liên tục sau khi ⛳ Tee shot'):'hố chưa có green GPS'}</span>`;
+ return `🎯 ${d?`<b>${Math.round(d.yd)}y</b>`:'<b>–</b>'}<span class="small"> ${g?(d?`${gpsAccuracyLabel(d.acc)}${rec?` • gợi ý <b>${esc(rec.club)}</b>`:''}`:'cập nhật khi ⛳ Tee shot, 🏁 Đến bóng hoặc mở 🗺️ Map'):'hố chưa có green GPS'}</span>`;
 }
 function updateGreenRowLive(){
  const el=document.getElementById('greenRowLive'); if(!el)return;
  const r=currentRound(); if(!r)return;
  const h=r.holes[currentHole-1]; if(!h)return;
  el.innerHTML=greenRowInner(r,h);
-}
-function startRoundWatch(){
- if(roundWatchId!==null||!navigator.geolocation)return;
- try{
-  roundWatchId=navigator.geolocation.watchPosition(p=>{
-   const r=currentRound();
-   if(!r||r.mode!=='real'){stopRoundWatch();return}
-   lastFix=gpsPointFromPosition(p);
-   const g=greenGpsFor(r,currentHole);
-   if(g){
-    greenDist={hole:currentHole,yd:gpsDistanceYards(lastFix,g),acc:Math.sqrt((num(lastFix.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
-    updateGreenRowLive();
-   }
-  },()=>{},{enableHighAccuracy:true,maximumAge:3000,timeout:20000});
- }catch(e){}
-}
-function stopRoundWatch(){
- if(roundWatchId!==null&&navigator.geolocation){try{navigator.geolocation.clearWatch(roundWatchId)}catch(e){}}
- roundWatchId=null;
 }
 function renderHoleHeader(r,h,hs){
  const nH=r.holes.length,hasCourse=r.mode==='real'&&!!courseForRound(r);
@@ -1205,7 +1187,6 @@ function confirmEndRound(){
  r.endedAt=new Date().toISOString();
  if(mapCtx)closeMap();
  if(mapWatchId!==null&&navigator.geolocation){try{navigator.geolocation.clearWatch(mapWatchId)}catch(e){}mapWatchId=null}
- stopRoundWatch();
  state.currentRoundId=null; currentHole=1; greenDist=null; lastFix=null;
  saveState(); closeModal(); render(); switchTab('Round',false);
  toast('Đã lưu round vào Lịch sử • GPS đã tắt');
@@ -1318,14 +1299,16 @@ async function startGpsShot(i){
   const p=await bestGpsPosition();
   s.gpsStart=gpsPointFromPosition(p); s.gpsEnd=null; s.gpsDistanceYd='';
   const g=greenGpsFor(r,currentHole);
-  if(g)s.remaining=Math.round(gpsDistanceYards(s.gpsStart,g));
+  if(g){
+   s.remaining=Math.round(gpsDistanceYards(s.gpsStart,g));
+   greenDist={hole:currentHole,yd:gpsDistanceYards(s.gpsStart,g),acc:Math.sqrt((num(s.gpsStart.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
+  }
   let teeUpdated=false;
   if(i===0){
    const c=courseForRound(r);
    if(c&&c.holes[currentHole-1]){c.holes[currentHole-1].teeGps={...s.gpsStart};teeUpdated=true}
   }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
-  startRoundWatch();
   toast((i===0?'Đã lưu vị trí tee':'Đã lưu điểm bắt đầu')+(g?` • còn ${s.remaining}y đến green`:` • ±${Math.round(s.gpsStart.accuracy)}m`)+(teeUpdated?' • đã cập nhật tee của sân':''));
  }catch(e){alert(e.message||'Không lấy được GPS.')}
 }
@@ -1363,7 +1346,6 @@ async function arriveGpsShot(i){
    }
   }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
-  startRoundWatch();
   const acc=gpsCombinedAccuracy(s.gpsStart,s.gpsEnd);
   toast((g?`Total ${Math.round(yd)}y • còn ${Math.round(greenDist.yd)}y đến green`:`GPS Total ${Math.round(yd)}y • ${gpsAccuracyLabel(acc)}`)+autoMsg);
  }catch(e){alert(e.message||'Không lấy được GPS.')}
@@ -1440,7 +1422,7 @@ function renderStats(){
  el.innerHTML=`<div class="card"><div class="section-title">Thống kê theo chế độ</div><div class="mode-tabs"><button class="mode-tab ${statsMode==='real'?'active':''}" onclick="app.setStatsMode('real')">⛳ Sân thật</button><button class="mode-tab ${statsMode==='simulation'?'active':''}" onclick="app.setStatsMode('simulation')">🖥️ Simulation</button></div>
  <div class="row" style="gap:8px;margin-bottom:8px"><div class="field grow"><label>Phạm vi thống kê</label><select onchange="app.setStatsScope('type',this.value)"><option value="all" ${sc.type==='all'?'selected':''}>Tất cả</option><option value="rounds" ${sc.type==='rounds'?'selected':''}>N round gần nhất</option><option value="shots" ${sc.type==='shots'?'selected':''}>N cú đánh gần nhất</option></select></div>${sc.type!=='all'?`<div class="field" style="max-width:92px"><label>N</label><input type="number" inputmode="numeric" min="1" value="${sc.n||10}" onchange="app.setStatsScope('n',this.value)"></div>`:''}</div>
  <div class="small">Score/Putt tổng hợp chỉ tính round đủ 18 hố. Cự ly gậy chỉ lấy cú Full swing + Clean + Thẳng.${sc.type==='shots'?' Phạm vi "N cú đánh" áp dụng cho bảng cự ly gậy & approach (mỗi gậy lấy N cú gần nhất); các KPI round tính trên toàn bộ round.':''}${sc.type==='rounds'?` Đang tính trên ${rounds.length} round gần nhất.`:''}</div></div>
- <div class="kpis">${kpi('Best score',agg.bestScore!==null?agg.bestScore:'–')}${kpi('Score trung bình',agg.avgScore!==null?agg.avgScore.toFixed(1):'–','hl')}${kpi('Best putt',agg.bestPutts!==null?agg.bestPutts:'–')}${kpi('Putt trung bình',agg.avgPutts!==null?agg.avgPutts.toFixed(1):'–')}${kpi('Driver playable',`${pct(agg.driverPlayable,agg.driverN)}%`,agg.driverN&&pct(agg.driverPlayable,agg.driverN)<70?'warn':'')}${kpi('Wood/UT playable',`${pct(agg.woodPlayable,agg.woodN)}%`,agg.woodN&&pct(agg.woodPlayable,agg.woodN)<70?'warn':'')}${kpi('Iron clean',`${pct(agg.ironClean,agg.ironN)}%`,agg.ironN&&pct(agg.ironClean,agg.ironN)<70?'warn':'')}${kpi('Approach success',`${pct(agg.appGood,agg.appN)}%`,agg.appN&&pct(agg.appGood,agg.appN)<65?'warn':'')}${kpi('Blow-up / round',agg.avgBlow!==null?agg.avgBlow.toFixed(1):'–',agg.avgBlow>=3?'bad':'')}${kpi('Miss 2+ / round',agg.avgMissChains!==null?agg.avgMissChains.toFixed(1):'–',agg.avgMissChains>=2?'bad':'')}</div>
+ <div class="kpis">${kpi('Best score',agg.bestScore!==null?agg.bestScore:'–','hl')}${kpi('Score trung bình',agg.avgScore!==null?agg.avgScore.toFixed(1):'–','hl')}${kpi('Best putt',agg.bestPutts!==null?agg.bestPutts:'–')}${kpi('Putt trung bình',agg.avgPutts!==null?agg.avgPutts.toFixed(1):'–')}${kpi('Driver playable',`${pct(agg.driverPlayable,agg.driverN)}%`,agg.driverN&&pct(agg.driverPlayable,agg.driverN)<70?'warn':'')}${kpi('Wood/UT playable',`${pct(agg.woodPlayable,agg.woodN)}%`,agg.woodN&&pct(agg.woodPlayable,agg.woodN)<70?'warn':'')}${kpi('Iron clean',`${pct(agg.ironClean,agg.ironN)}%`,agg.ironN&&pct(agg.ironClean,agg.ironN)<70?'warn':'')}${kpi('Approach success',`${pct(agg.appGood,agg.appN)}%`,agg.appN&&pct(agg.appGood,agg.appN)<65?'warn':'')}${kpi('Blow-up / round',agg.avgBlow!==null?agg.avgBlow.toFixed(1):'–',agg.avgBlow>=3?'bad':'')}${kpi('Miss 2+ / round',agg.avgMissChains!==null?agg.avgMissChains.toFixed(1):'–',agg.avgMissChains>=2?'bad':'')}</div>
  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">${kpi('Penalty / round',agg.avgPens!==null?agg.avgPens.toFixed(1):'–',agg.avgPens>=2?'warn':'')}${kpi('OB / round',agg.avgOb!==null?agg.avgOb.toFixed(1):'–',agg.avgOb>=1?'warn':'')}${kpi('Bunker / round',agg.avgBunker!==null?agg.avgBunker.toFixed(1):'–',agg.avgBunker>=2?'warn':'')}</div>
  <div class="card"><div class="section-title">Cự ly gậy tham khảo – ${modeLabel(statsMode)}</div><div class="small section-help">Carry/Total/Max chỉ lấy cú thuộc nhóm Playable (Playable / On green / Fringe) + Clean + Thẳng. Clean/Thẳng tính trên toàn bộ full shot; Playable % chỉ tính 3 kết quả trên. Max = cú Total xa nhất; nếu chưa có Total thì dùng Carry.</div>${clubTable(clubs)}</div>
  <div class="card"><div class="section-title">Kỹ năng Approach – ${modeLabel(statsMode)}</div><div class="small section-help">Putt đầu TB = cự ly putt đầu tiên sau approach cuối cùng. Putt cuối TB = cự ly cú putt kết thúc hố. Đơn vị mét; càng nhỏ càng tốt.</div>${approachTable(apps)}</div>
