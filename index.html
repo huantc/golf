@@ -182,6 +182,14 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 .kpi.hl .v,.kpi.hl .l{color:#fff}
 .kpi.hl .v{font-size:34px}
 #pageStats .kpis{margin-bottom:12px}
+.hole-score-big{flex:none;min-width:46px;text-align:center;font-size:25px;font-weight:900;color:var(--green);background:#eef6f0;border:1px solid #cfe0d4;border-radius:11px;padding:3px 10px;line-height:1.2;cursor:pointer}
+.history-row{display:flex;width:100%;gap:8px;align-items:center;padding:11px 2px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer}
+.history-row:last-child{border-bottom:0}
+.hr-date{flex:none;font-size:12px;color:var(--muted);min-width:42px}
+.hr-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:800;color:var(--green);font-size:14px}
+.hr-stats{flex:none;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.hr-stats b{color:var(--green);font-size:15px}
+.shotmark{width:22px;height:22px;border-radius:50%;background:#ffd24d;color:#153b2a;font-weight:900;font-size:12px;display:flex;align-items:center;justify-content:center;border:2px solid #153b2a;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 @media(max-width:520px){.round-head-sticky{top:calc(50px + env(safe-area-inset-top))}.hole-head-merged{top:calc(110px + env(safe-area-inset-top))}}
 .green-dist-val{margin-top:8px;font-size:14px}
 .green-dist-val b{font-size:26px;color:var(--green)}
@@ -908,7 +916,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=28, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=29, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -926,7 +934,7 @@ const NOUVELLE=[
 ];
 let currentHole=1, activeTab='Round', statsMode='real', historyMode='real', historyDetailId=null;
 let courseEditId=null, courseDraft=null, greenDist=null, osmResults=[];
-let lmap=null, mapCtx=null, mapHole=1, mapTarget='green', mapBase='photo', baseLayers=null, mapMarkerLayer=null, mapMeMarker=null, mapMeCircle=null, mapLine=null, mapWatchId=null, lastFix=null, lastRoundMapDist=null, roundWatchId=null;
+let lmap=null, mapCtx=null, mapHole=1, mapTarget='green', mapBase='photo', baseLayers=null, mapMarkerLayer=null, mapMeMarker=null, mapMeCircle=null, mapLine=null, mapWatchId=null, lastFix=null, lastRoundMapDist=null, roundWatchId=null, replayRound=null, replayLayer=null;
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
 function today(){return new Date().toISOString().slice(0,10)}
 function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -1030,6 +1038,43 @@ function scopedRounds(mode){
  if(sc.type==='rounds')return rounds.slice(-Math.max(1,num(sc.n)||10));
  return rounds;
 }
+function scoreDistStats(rounds){
+ const withScore=rounds.filter(r=>(r.holes||[]).some(h=>holeScore(h)!==''));
+ const n=withScore.length, c={birdie:0,par:0,bogey:0,dbl:0,worse:0};
+ withScore.forEach(r=>r.holes.forEach(h=>{const sc=holeScore(h);if(sc==='')return;const d=holeDelta(h);
+  if(d<=-1)c.birdie++;else if(d===0)c.par++;else if(d===1)c.bogey++;else if(d===2)c.dbl++;else c.worse++;}));
+ const per=k=>n?(c[k]/n).toFixed(1):'–';
+ return {n,birdie:per('birdie'),par:per('par'),bogey:per('bogey'),dbl:per('dbl'),worse:per('worse')};
+}
+function approachAgg(rounds,limit){
+ const recs=[];
+ orderedRounds(rounds).forEach(r=>(r.holes||[]).forEach(h=>{
+  const arr=h.approaches||[];
+  arr.forEach((a,idx)=>{
+   const rec={a,first:null};
+   if(idx===arr.length-1&&h.putts?.length){
+    const f=h.putts[0];
+    if(f&&f.distance!==''&&f.distance!==null&&f.distance!==undefined){const d=num(f.distance);if(d>=0)rec.first=d}
+   }
+   recs.push(rec);
+  });
+ }));
+ const use=limit?recs.slice(-limit):recs;
+ const n=use.length, good=use.filter(x=>['Green','Fringe'].includes(x.a.outcome)).length, clean=use.filter(x=>x.a.contact==='Clean').length;
+ const firsts=use.map(x=>x.first).filter(x=>x!==null);
+ return {n,goodPct:pct(good,n),cleanPct:pct(clean,n),nearest:firsts.length?Math.min(...firsts):null,avgNear:avg(firsts)};
+}
+function puttAgg(rounds){
+ let total=0,holesN=0,one=0,longest=null; const lasts=[];
+ rounds.forEach(r=>(r.holes||[]).forEach(h=>{
+  const ps=h.putts||[]; if(!ps.length)return;
+  holesN++; total+=ps.length; if(ps.length===1)one++;
+  const last=ps[ps.length-1];
+  if(last&&last.distance!==''&&last.distance!==null&&last.distance!==undefined){const d=num(last.distance);if(d>=0)lasts.push(d)}
+  ps.forEach(p=>{if(p.made&&p.distance!==''&&p.distance!==null&&p.distance!==undefined){const d=num(p.distance);if(longest===null||d>longest)longest=d}});
+ }));
+ return {holesN,avgPerHole:holesN?total/holesN:null,onePct:pct(one,holesN),longest,avgLast:avg(lasts)};
+}
 function parScoreStats(rounds){
  const m={3:{n:0,sum:0},4:{n:0,sum:0},5:{n:0,sum:0}};
  rounds.forEach(r=>(r.holes||[]).forEach(h=>{const sc=holeScore(h);if(sc==='')return;const p=num(h.par);if(m[p]){m[p].n++;m[p].sum+=num(sc)}}));
@@ -1112,7 +1157,11 @@ function nextRemaining(h){
  if(num(last.remaining)>0&&num(last.total)>0)return Math.max(0,Math.round((num(last.remaining)-num(last.total))*10)/10); return '';
 }
 function courseTemplates(){const sorted=[...state.rounds].sort((a,b)=>((b.date||'')+(b.createdAt||'')).localeCompare((a.date||'')+(a.createdAt||''))),seen=new Set(),out=[];sorted.forEach(r=>{const key=(r.course||'').trim().toLowerCase()+'|'+(r.tee||'').trim().toLowerCase();if(!r.course||seen.has(key))return;seen.add(key);out.push(r)});return out}
-function courseResultHtml(q=''){const term=q.trim().toLowerCase(),rows=courseTemplates().filter(r=>!term||(r.course||'').toLowerCase().includes(term)||(r.tee||'').toLowerCase().includes(term)).slice(0,8),presetMatch=!term||'nouvelle golf club regular'.includes(term);const regRows=state.courses.filter(c=>!term||(c.name||'').toLowerCase().includes(term)).map(c=>`<button type="button" class="btn ghost course-result" onclick="app.selectCourseTemplate('course:${c.id}')"><b>⭐ ${esc(c.name)}</b><br><span class="small">Sân đã đăng ký • Tee: ${esc(c.tees.join('/'))} • Green GPS ${c.holes.filter(h=>h.greenGps).length}/18 • Tee GPS ${c.holes.filter(h=>h.teeGps).length}/18</span></button>`).join('');return `${regRows}${presetMatch?`<button type="button" class="btn ghost course-result" onclick="app.selectCourseTemplate('preset:nouvelle')"><b>Nouvelle Golf Club</b><br><span class="small">Preset • Regular • 18 hố đã có Par/Yardage</span></button>`:''}${rows.map(r=>`<button type="button" class="btn ghost course-result" onclick="app.selectCourseTemplate('round:${r.id}')"><b>${esc(r.course)}</b><br><span class="small">${modeIcon(r.mode)} ${modeLabel(r.mode)} • ${esc(r.tee||'Regular')} • gần nhất ${esc(r.date||'')} • dùng lại Par/Yardage/strategy</span></button>`).join('')||(!presetMatch?'<div class="small" style="padding:8px 2px">Không tìm thấy sân đã chơi. Hãy nhập sân mới bên dưới.</div>':'')}`}
+function courseResultHtml(q=''){
+ const term=q.trim().toLowerCase(),presetMatch=!term||'nouvelle golf club regular'.includes(term);
+ const regRows=state.courses.filter(c=>!term||(c.name||'').toLowerCase().includes(term)).map(c=>`<button type="button" class="btn ghost course-result" onclick="app.selectCourseTemplate('course:${c.id}')"><b>⭐ ${esc(c.name)}</b><br><span class="small">Tee: ${esc(c.tees.join('/'))} • ${c.holes.length} hố • Green GPS ${c.holes.filter(h=>h.greenGps).length}/${c.holes.length}</span></button>`).join('');
+ return `${regRows}${presetMatch?`<button type="button" class="btn ghost course-result" onclick="app.selectCourseTemplate('preset:nouvelle')"><b>Nouvelle Golf Club</b><br><span class="small">Preset • Regular • 18 hố đã có Par/Yardage</span></button>`:''}${(!regRows&&!presetMatch)?'<div class="small" style="padding:8px 2px">Không có sân này trong danh sách. Nhập tên sân mới bên dưới — sân sẽ tự được lưu vào danh sách khi tạo round sân thật.</div>':''}`;
+}
 function optionList(arr,val){return arr.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}
 function kpi(label,val,cls=''){return `<div class="kpi ${cls}"><div class="v">${val}</div><div class="l">${label}</div></div>`}
 function render(){renderRound();renderStats();renderHistory();renderSettings();switchTab(activeTab,false)}
@@ -1157,9 +1206,10 @@ function renderHoleHeader(r,h,hs){
  const gpsRow=hasCourse?`
  <div class="green-row">
   <div class="green-dist-inline" id="greenRowLive">${greenRowInner(r,h)}</div>
+  <div class="hole-score-big" onclick="app.openScorecard()" title="Score hố này">${hs===''?'–':hs}</div>
   <div class="row" style="gap:6px;flex:none"><button class="btn compact" onclick="app.openRoundMap()">🗺️ Map</button></div>
  </div>`:`
- <div class="green-row"><div class="small">Ghi từng cú đánh bên dưới.</div><button class="btn ghost compact" onclick="app.editHoleMeta()">✎ Sửa hố</button></div>`;
+ <div class="green-row"><div class="small">Ghi từng cú đánh bên dưới.</div><div class="hole-score-big">${hs===''?'–':hs}</div><button class="btn ghost compact" onclick="app.editHoleMeta()">✎ Sửa hố</button></div>`;
  return `<div class="card hole-head-merged">
  <div class="hole-nav-row">
   <button class="btn ghost" ${currentHole===1?'disabled':''} onclick="app.goHole(${currentHole-1})">← H${Math.max(1,currentHole-1)}</button>
@@ -1176,6 +1226,18 @@ function openHolePicker(){
 function openScorecard(){
  const r=currentRound(); if(!r)return;
  openModal(`<h3>Score card — ${esc(r.course)}</h3>${scorecardHtml(r)}<button class="btn grow" style="width:100%;margin-top:12px" onclick="app.closeModal()">Đóng</button>`);
+}
+function roundHasGps(r){return (r.holes||[]).some(h=>(h.shots||[]).some(s=>s.gpsStart||s.gpsEnd))}
+function openExportPicker(){
+ const rounds=modeRounds(historyMode).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+ openModal(`<h3>Export round (JSON)</h3><div class="small" style="margin-bottom:10px">Chọn các round muốn export (mặc định: tất cả).</div><div style="max-height:300px;overflow:auto">${rounds.map(r=>{const s=fullRoundStats(r);return `<label class="checkline"><input type="checkbox" class="expChk" value="${r.id}" checked><span style="font-size:14px">${esc(r.date)} • ${esc(r.course)}${s.holes?` • ${s.score}`:''}</span></label>`}).join('')||'<div class="small">Chưa có round nào.</div>'}</div><div class="row" style="margin-top:14px"><button class="btn grow" onclick="app.closeModal()">Hủy</button><button class="btn primary grow" onclick="app.confirmExport()">⬇ Export JSON</button></div>`);
+}
+function confirmExport(){
+ const ids=[...document.querySelectorAll('.expChk:checked')].map(x=>x.value);
+ const rs=state.rounds.filter(r=>ids.includes(r.id));
+ if(!rs.length){toast('Chưa chọn round nào');return}
+ download(`golf_rounds_${today()}.json`,{app:'Golf Round Manager',version:VERSION,exportedAt:new Date().toISOString(),rounds:rs});
+ closeModal(); toast(`Đã export ${rs.length} round`);
 }
 function requestEndRound(){
  const r=currentRound(); if(!r)return;
@@ -1418,15 +1480,19 @@ function renderPutts(h){if(!h.putts.length)return `<div class="empty compact-emp
 function clubTable(cs){if(!cs.length)return '<div class="empty">Chưa có dữ liệu gậy.</div>';return `<div class="table-wrap club-ref-wrap"><table class="club-ref-table"><thead><tr><th>Gậy</th><th>Carry</th><th>Total</th><th>Max</th><th>Clean</th><th>Thẳng</th><th>Playable</th></tr></thead><tbody>${cs.map(x=>`<tr><td><b>${esc(x.club)}</b></td><td>${x.avgCarry!==null?x.avgCarry.toFixed(1)+'y':'–'}</td><td>${x.avgTotal!==null?x.avgTotal.toFixed(1)+'y':'–'}</td><td>${x.longest!==null?x.longest.toFixed(0)+'y':'–'}</td><td>${x.cleanPct}%</td><td>${x.straightPct}%</td><td>${x.playablePct}%</td></tr>`).join('')}</tbody></table></div>`}
 function approachTable(rows){if(!rows.length)return '<div class="empty">Chưa có dữ liệu pitch/chip.</div>';return `<div class="table-wrap approach-stats-wrap"><table class="approach-stats-table"><thead><tr><th>Loại / Gậy</th><th>Putt đầu TB</th><th>Putt cuối TB</th><th>On green</th><th>Clean</th></tr></thead><tbody>${rows.map(x=>`<tr><td><b>${esc(x.type)} / ${esc(x.club)}</b></td><td>${x.avgNearPin!==null?x.avgNearPin.toFixed(2)+'m':'–'}</td><td>${x.avgLastPutt!==null?x.avgLastPutt.toFixed(2)+'m':'–'}</td><td>${x.goodPct}%</td><td>${x.cleanPct}%</td></tr>`).join('')}</tbody></table></div>`}
 function renderStats(){
- const el=document.getElementById('pageStats'),sc=statsScope(),rounds=scopedRounds(statsMode),shotLimit=sc.type==='shots'?Math.max(1,num(sc.n)||10):0,agg=aggregateModeStats(rounds),clubs=clubStats(rounds,shotLimit),apps=approachStats(rounds,shotLimit),parS=parScoreStats(rounds);
+ const el=document.getElementById('pageStats'),sc=statsScope(),rounds=scopedRounds(statsMode),shotLimit=sc.type==='shots'?Math.max(1,num(sc.n)||10):0,agg=aggregateModeStats(rounds),clubs=clubStats(rounds,shotLimit),apps=approachStats(rounds,shotLimit),parS=parScoreStats(rounds),dist=scoreDistStats(rounds),apA=approachAgg(rounds,shotLimit),pu=puttAgg(rounds);
  el.innerHTML=`<div class="card"><div class="section-title">Thống kê theo chế độ</div><div class="mode-tabs"><button class="mode-tab ${statsMode==='real'?'active':''}" onclick="app.setStatsMode('real')">⛳ Sân thật</button><button class="mode-tab ${statsMode==='simulation'?'active':''}" onclick="app.setStatsMode('simulation')">🖥️ Simulation</button></div>
  <div class="row" style="gap:8px;margin-bottom:8px"><div class="field grow"><label>Phạm vi thống kê</label><select onchange="app.setStatsScope('type',this.value)"><option value="all" ${sc.type==='all'?'selected':''}>Tất cả</option><option value="rounds" ${sc.type==='rounds'?'selected':''}>N round gần nhất</option><option value="shots" ${sc.type==='shots'?'selected':''}>N cú đánh gần nhất</option></select></div>${sc.type!=='all'?`<div class="field" style="max-width:92px"><label>N</label><input type="number" inputmode="numeric" min="1" value="${sc.n||10}" onchange="app.setStatsScope('n',this.value)"></div>`:''}</div>
  <div class="small">Score/Putt tổng hợp chỉ tính round đủ 18 hố. Cự ly gậy chỉ lấy cú Full swing + Clean + Thẳng.${sc.type==='shots'?' Phạm vi "N cú đánh" áp dụng cho bảng cự ly gậy & approach (mỗi gậy lấy N cú gần nhất); các KPI round tính trên toàn bộ round.':''}${sc.type==='rounds'?` Đang tính trên ${rounds.length} round gần nhất.`:''}</div></div>
  <div class="kpis">${kpi('Best score',agg.bestScore!==null?agg.bestScore:'–','hl')}${kpi('Score trung bình',agg.avgScore!==null?agg.avgScore.toFixed(1):'–','hl')}${kpi('Best putt',agg.bestPutts!==null?agg.bestPutts:'–')}${kpi('Putt trung bình',agg.avgPutts!==null?agg.avgPutts.toFixed(1):'–')}${kpi('Driver playable',`${pct(agg.driverPlayable,agg.driverN)}%`,agg.driverN&&pct(agg.driverPlayable,agg.driverN)<70?'warn':'')}${kpi('Wood/UT playable',`${pct(agg.woodPlayable,agg.woodN)}%`,agg.woodN&&pct(agg.woodPlayable,agg.woodN)<70?'warn':'')}${kpi('Iron clean',`${pct(agg.ironClean,agg.ironN)}%`,agg.ironN&&pct(agg.ironClean,agg.ironN)<70?'warn':'')}${kpi('Approach success',`${pct(agg.appGood,agg.appN)}%`,agg.appN&&pct(agg.appGood,agg.appN)<65?'warn':'')}${kpi('Blow-up / round',agg.avgBlow!==null?agg.avgBlow.toFixed(1):'–',agg.avgBlow>=3?'bad':'')}${kpi('Miss 2+ / round',agg.avgMissChains!==null?agg.avgMissChains.toFixed(1):'–',agg.avgMissChains>=2?'bad':'')}</div>
  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">${kpi('Penalty / round',agg.avgPens!==null?agg.avgPens.toFixed(1):'–',agg.avgPens>=2?'warn':'')}${kpi('OB / round',agg.avgOb!==null?agg.avgOb.toFixed(1):'–',agg.avgOb>=1?'warn':'')}${kpi('Bunker / round',agg.avgBunker!==null?agg.avgBunker.toFixed(1):'–',agg.avgBunker>=2?'warn':'')}</div>
  <div class="card"><div class="section-title">Cự ly gậy tham khảo – ${modeLabel(statsMode)}</div><div class="small section-help">Carry/Total/Max chỉ lấy cú thuộc nhóm Playable (Playable / On green / Fringe) + Clean + Thẳng. Clean/Thẳng tính trên toàn bộ full shot; Playable % chỉ tính 3 kết quả trên. Max = cú Total xa nhất; nếu chưa có Total thì dùng Carry.</div>${clubTable(clubs)}</div>
- <div class="card"><div class="section-title">Kỹ năng Approach – ${modeLabel(statsMode)}</div><div class="small section-help">Putt đầu TB = cự ly putt đầu tiên sau approach cuối cùng. Putt cuối TB = cự ly cú putt kết thúc hố. Đơn vị mét; càng nhỏ càng tốt.</div>${approachTable(apps)}</div>
- <div class="card"><div class="section-title">Score TB theo Par — ${modeLabel(statsMode)}</div><div class="kpis" style="grid-template-columns:repeat(3,1fr)">${[3,4,5].map(p=>{const x=parS[p];return kpi(`Par ${p}`,x.n?(x.sum/x.n).toFixed(2):'–',x.n&&(x.sum/x.n)-p>=1.5?'warn':'')}).join('')}</div></div>`;
+ <div class="card"><div class="section-title">Kỹ năng Approach theo gậy – ${modeLabel(statsMode)}</div><div class="small section-help">Putt đầu TB = cự ly putt đầu tiên sau approach cuối cùng. Putt cuối TB = cự ly cú putt kết thúc hố. Đơn vị mét; càng nhỏ càng tốt.</div>${approachTable(apps)}</div>
+ <div class="card"><div class="section-title">Approach — ${modeLabel(statsMode)}</div><div class="kpis" style="margin-bottom:0">${kpi('Nearest pin',apA.nearest!==null?apA.nearest.toFixed(1)+'m':'–')}${kpi('Near pin TB',apA.avgNear!==null?apA.avgNear.toFixed(1)+'m':'–')}${kpi('On green',apA.n?apA.goodPct+'%':'–')}${kpi('Clean',apA.n?apA.cleanPct+'%':'–')}</div></div>
+ <div class="card"><div class="section-title">Putt — ${modeLabel(statsMode)}</div><div class="kpis" style="margin-bottom:0">${kpi('Longest putt vào hố',pu.longest!==null?pu.longest.toFixed(1)+'m':'–')}${kpi('Cự ly TB putt cuối',pu.avgLast!==null?pu.avgLast.toFixed(2)+'m':'–')}${kpi('Putt TB / hố',pu.avgPerHole!==null?pu.avgPerHole.toFixed(2):'–')}${kpi('1-putt %',pu.holesN?pu.onePct+'%':'–')}</div></div>
+ <div class="card"><div class="section-title">Score theo Par — ${modeLabel(statsMode)}</div><div class="kpis" style="grid-template-columns:repeat(3,1fr)">${[3,4,5].map(p=>{const x=parS[p];return kpi(`Par ${p}`,x.n?(x.sum/x.n).toFixed(2):'–',x.n&&(x.sum/x.n)-p>=1.5?'warn':'')}).join('')}</div>
+ <div class="small" style="margin:2px 0 8px">Phân bố score / round</div>
+ <div class="kpis" style="grid-template-columns:repeat(5,1fr);margin-bottom:0">${kpi('Birdie−',dist.birdie)}${kpi('Par',dist.par)}${kpi('Bogey',dist.bogey)}${kpi('Double',dist.dbl)}${kpi('Double+',dist.worse)}</div></div>`;
 }
 function scoreMark(h){const sc=holeScore(h);if(sc==='')return '–';const d=holeDelta(h);if(d<=-3)return '☆';if(d===-2)return '◎';if(d===-1)return '○';if(d===0)return '—';if(d===1)return '△';if(d===2)return '□';return `+${d}`}
 function scorecardHtml(r){
@@ -1450,9 +1516,9 @@ function historyHoleDetails(r){return r.holes.map(h=>{
  return `<div class="history-hole"><div class="row between"><b>H${h.hole} • Par ${h.par} • ${h.length||'–'}y</b><span class="score-mini">${holeScore(h)||'–'} ${holeDelta(h)===''?'':`(${holeDelta(h)>=0?'+':''}${holeDelta(h)})`}</span></div>${full?`<div class="history-shotline full-line"><span class="kind">Full</span>${full}</div>`:''}${apps?`<div class="history-shotline app-line"><span class="kind">Approach</span>${apps}</div>`:''}<div class="small">Putt: ${h.putts?.length||0}${otherPen?` • Penalty: ${otherPen}`:''}${ob?` • OB: ${ob}`:''}</div>${h.notes?`<div class="small note-inline">${esc(h.notes)}</div>`:''}</div>`
  }).join('')}
 function renderHistory(){
- const el=document.getElementById('pageHistory'); if(historyDetailId){const r=state.rounds.find(x=>x.id===historyDetailId);if(r){const s=fullRoundStats(r);el.innerHTML=`<div class="card"><div class="row between"><button class="btn" onclick="app.closeHistoryDetail()">← Lịch sử</button><button class="btn primary" onclick="app.editHistoricalRound('${r.id}')">✎ Edit round</button></div><div style="margin-top:12px"><div class="history-title" style="font-size:20px">${esc(r.course)}</div><div class="small">${esc(r.date)} • ${esc(r.tee)} • ${modeIcon(r.mode)} ${modeLabel(r.mode)}</div></div><div class="kpis history-summary" style="margin-top:12px">${kpi('Score',s.holes?`${s.score} (${s.delta>=0?'+':''}${s.delta})`:'–')}${kpi('Putts',s.putts)}${kpi('Penalty',s.pens)}${kpi('OB',s.ob)}</div></div><div class="card"><div class="section-title">Score card</div>${scorecardHtml(r)}</div><div class="card"><div class="section-title">Gậy đã dùng theo từng hố</div><div class="small section-help">Full swing và Approach được tách thành hai dòng; hiển thị gậy, cự ly (nếu có), hướng và contact.</div>${historyHoleDetails(r)}</div><div class="row wrap"><button class="btn" onclick="app.exportSpecific('${r.id}')">Export JSON</button><button class="btn" onclick="app.duplicateRound('${r.id}')">Nhân bản round</button></div>`;return}}
+ const el=document.getElementById('pageHistory'); if(historyDetailId){const r=state.rounds.find(x=>x.id===historyDetailId);if(r){const s=fullRoundStats(r);el.innerHTML=`<div class="card"><div class="row between"><button class="btn" onclick="app.closeHistoryDetail()">← Lịch sử</button><div class="row" style="gap:7px"><button class="btn primary compact" onclick="app.editHistoricalRound('${r.id}')">✎ Edit</button><button class="btn bad compact" onclick="app.requestDeleteRound('${r.id}')">🗑 Xóa</button></div></div><div style="margin-top:12px"><div class="history-title" style="font-size:20px">${esc(r.course)}</div><div class="small">${esc(r.date)} • ${esc(r.tee)} • ${modeIcon(r.mode)} ${modeLabel(r.mode)}</div></div><div class="kpis history-summary" style="margin-top:12px">${kpi('Score',s.holes?`${s.score} (${s.delta>=0?'+':''}${s.delta})`:'–')}${kpi('Putts',s.putts)}${kpi('Penalty',s.pens)}${kpi('OB',s.ob)}${kpi('Bunker',s.bunker)}</div>${roundHasGps(r)?`<button class="btn primary" style="width:100%;margin-top:10px" onclick="app.openReplayMap('${r.id}')">🗺️ Xem lại các cú đánh trên bản đồ</button>`:''}</div><div class="card"><div class="section-title">Score card</div>${scorecardHtml(r)}</div><div class="card"><div class="section-title">Gậy đã dùng theo từng hố</div><div class="small section-help">Full swing và Approach được tách thành hai dòng; hiển thị gậy, cự ly (nếu có), hướng và contact.</div>${historyHoleDetails(r)}</div>`;return}}
  const rounds=modeRounds(historyMode).sort((a,b)=>(b.date||'').localeCompare(a.date||'')),agg=aggregateModeStats(rounds);
- el.innerHTML=`<div class="card"><div class="row between"><div class="section-title">Lịch sử round</div></div><div class="mode-tabs"><button class="mode-tab ${historyMode==='real'?'active':''}" onclick="app.setHistoryMode('real')">⛳ Sân thật</button><button class="mode-tab ${historyMode==='simulation'?'active':''}" onclick="app.setHistoryMode('simulation')">🖥️ Simulation</button></div><div class="small" style="margin-bottom:8px">${rounds.length} round • ${agg.full18} round đủ 18 hố</div>${rounds.length?rounds.map(r=>{const s=fullRoundStats(r);return `<div class="history-item"><div class="row between"><div><div class="history-title">${esc(r.course)} <span class="mode-badge ${r.mode==='simulation'?'sim':''}">${modeIcon(r.mode)} ${modeLabel(r.mode)}</span></div><div class="small">${esc(r.date)} • ${esc(r.tee)} • ${s.holes} hố • ${s.holes?s.score+' ('+(s.delta>=0?'+':'')+s.delta+')':'chưa có score'} • ${s.putts} putt</div></div><button class="btn" onclick="app.openHistoryRound('${r.id}')">Xem</button></div><div class="row wrap" style="margin-top:8px"><button class="btn ghost" onclick="app.editHistoricalRound('${r.id}')">Edit</button><button class="btn ghost" onclick="app.exportSpecific('${r.id}')">JSON</button><button class="btn ghost" onclick="app.duplicateRound('${r.id}')">Nhân bản</button><button class="btn bad" onclick="app.requestDeleteRound('${r.id}')">Xóa</button></div></div>`}).join(''):'<div class="empty">Chưa có round nào ở chế độ này.</div>'}</div>`;
+ el.innerHTML=`<div class="card"><div class="row between"><div class="section-title">Lịch sử round</div><button class="btn compact" onclick="app.openExportPicker()">⬇ Export</button></div><div class="mode-tabs"><button class="mode-tab ${historyMode==='real'?'active':''}" onclick="app.setHistoryMode('real')">⛳ Sân thật</button><button class="mode-tab ${historyMode==='simulation'?'active':''}" onclick="app.setHistoryMode('simulation')">🖥️ Simulation</button></div><div class="small" style="margin-bottom:6px">Chạm vào round để xem chi tiết. <b>≤P</b> par trở xuống • <b>B</b> bogey • <b>W</b> double bogey trở lên.</div>${rounds.length?rounds.map(r=>{const s=fullRoundStats(r);const hc=r.holes.filter(h=>holeScore(h)!=='');const le=hc.filter(h=>holeDelta(h)<=0).length,bg=hc.filter(h=>holeDelta(h)===1).length,db=hc.filter(h=>holeDelta(h)>=2).length;return `<button class="history-row" onclick="app.openHistoryRound('${r.id}')"><span class="hr-date">${esc((r.date||'').slice(5))}</span><span class="hr-name">${esc(r.course)}</span><span class="hr-stats">${s.holes?`<b>${s.score}</b> · ${s.putts}p · ≤P${le} B${bg} W${db}`:'–'}</span></button>`}).join(''):'<div class="empty">Chưa có round nào ở chế độ này.</div>'}</div>`;
 }
 // ---- OpenStreetMap (Overpass API) course import ----
 const OSM_ENDPOINTS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.private.coffee/api/interpreter'];
@@ -1654,7 +1720,7 @@ function osmApplyToDraft(data){
 }
 // ---- Map (Leaflet + GSI aerial tiles) ----
 function hasLeaflet(){return typeof L!=='undefined'}
-function mapCourse(){return mapCtx==='editor'?courseDraft:courseForRound(currentRound())}
+function mapCourse(){return mapCtx==='editor'?courseDraft:(mapCtx==='replay'?courseForRound(replayRound):courseForRound(currentRound()))}
 function firstCoursePoint(c){if(!c)return null;for(const h of c.holes){if(h.greenGps)return h.greenGps;if(h.teeGps)return h.teeGps}return null}
 function openMapShell(topHtml){
  document.getElementById('mapRoot').innerHTML=`<div class="map-overlay"><div class="map-top">${topHtml}</div><div id="leafletMap"></div><div class="map-bottom"></div></div>`;
@@ -1711,11 +1777,45 @@ function roundMapBottomHtml(){
  return `<div class="map-hole-strip">${c.holes.map(x=>`<button class="map-chip ${x.hole===mapHole?'active':''}" onclick="app.mapGoHole(${x.hole})">${x.hole}${x.greenGps?'<span class="chipdot g"></span>':''}</button>`).join('')}</div>
  <div class="map-hint">Chấm xanh = vị trí của bạn (GPS live). Chạm số hố để xem green hố khác; khi đóng map, hố đang xem thành hố hiện tại.</div>`;
 }
+function replayMapBottomHtml(){
+ const r=replayRound; if(!r)return '';
+ return `<div class="map-hole-strip">${r.holes.map(x=>{const has=(x.shots||[]).some(s=>s.gpsStart||s.gpsEnd);return `<button class="map-chip ${x.hole===mapHole?'active':''}" onclick="app.mapGoHole(${x.hole})">${x.hole}${has?'<span class="chipdot g"></span>':''}</button>`}).join('')}</div>
+ <div class="map-hint">Chấm xanh = hố có dữ liệu GPS. Số vàng = thứ tự cú đánh; đường vàng = đường bóng đo được.</div>`;
+}
+function drawReplay(){
+ if(mapCtx!=='replay'||!lmap||!replayLayer)return;
+ replayLayer.clearLayers();
+ const r=replayRound,h=r&&r.holes[mapHole-1]; if(!h)return;
+ const pts=[];
+ (h.shots||[]).forEach((s,i)=>{
+  if(s.gpsStart&&s.gpsEnd)replayLayer.addLayer(L.polyline([[s.gpsStart.lat,s.gpsStart.lng],[s.gpsEnd.lat,s.gpsEnd.lng]],{color:'#ffd24d',weight:3,opacity:.95}));
+  if(s.gpsStart){replayLayer.addLayer(L.marker([s.gpsStart.lat,s.gpsStart.lng],{icon:L.divIcon({className:'',html:`<div class="shotmark">${i+1}</div>`,iconSize:[22,22],iconAnchor:[11,11]})}));pts.push([s.gpsStart.lat,s.gpsStart.lng])}
+  if(s.gpsEnd)pts.push([s.gpsEnd.lat,s.gpsEnd.lng]);
+ });
+ const g=greenGpsFor(r,mapHole); if(g)pts.push([g.lat,g.lng]);
+ const info=document.getElementById('replayInfo');
+ if(info){const tot=(h.shots||[]).filter(s=>num(s.total)>0).map(s=>Math.round(num(s.total)));info.innerHTML=`H${mapHole}${tot.length?` • <b>${tot.join(' → ')}y</b>`:' • chưa có GPS'}`}
+ if(pts.length>1)lmap.fitBounds(pts,{padding:[46,46]});
+ else if(pts.length===1)lmap.setView(pts[0],17);
+}
+function openReplayMap(id){
+ const r=state.rounds.find(x=>x.id===id); if(!r)return;
+ if(!hasLeaflet()){alert('Không tải được thư viện bản đồ.');return}
+ replayRound=r; mapCtx='replay';
+ const first=r.holes.findIndex(h=>(h.shots||[]).some(s=>s.gpsStart||s.gpsEnd)); mapHole=first>=0?first+1:1;
+ openMapShell(`<button class="btn compact" onclick="app.closeMap()">✕ Đóng</button><div class="map-dist" id="replayInfo">H${mapHole}</div><button class="btn compact" onclick="app.mapToggleBase()">🛰️/🗺️</button>`);
+ const h0=r.holes[mapHole-1],s0=(h0.shots||[]).find(s=>s.gpsStart||s.gpsEnd);
+ const p0=s0?(s0.gpsStart||s0.gpsEnd):firstCoursePoint(courseForRound(r));
+ initLeaflet(p0?[p0.lat,p0.lng]:[36.2048,138.2529],p0?16:5);
+ replayLayer=L.layerGroup().addTo(lmap);
+ refreshMapUI();
+}
 function refreshMapUI(){
  drawCourseMarkers();
  const bottom=document.querySelector('.map-bottom');
- if(bottom)bottom.innerHTML=mapCtx==='editor'?editorMapBottomHtml():roundMapBottomHtml();
+ if(bottom)bottom.innerHTML=mapCtx==='editor'?editorMapBottomHtml():(mapCtx==='replay'?replayMapBottomHtml():roundMapBottomHtml());
  if(mapCtx==='round')updateRoundLine();
+ if(mapCtx==='replay')drawReplay();
 }
 function openEditorMap(){
  if(!courseDraft)return;
@@ -1770,11 +1870,12 @@ function updateRoundLine(){
 }
 function closeMap(){
  if(mapWatchId!==null&&navigator.geolocation)navigator.geolocation.clearWatch(mapWatchId);
- mapWatchId=null; lastFix=null; mapLine=null; mapMeMarker=null; mapMeCircle=null; mapMarkerLayer=null;
+ mapWatchId=null; lastFix=null; mapLine=null; mapMeMarker=null; mapMeCircle=null; mapMarkerLayer=null; replayLayer=null;
  if(lmap){try{lmap.remove()}catch(e){}lmap=null}
  document.getElementById('mapRoot').innerHTML='';
- const was=mapCtx; mapCtx=null;
+ const was=mapCtx; mapCtx=null; replayRound=null;
  if(was==='editor')renderSettings();
+ if(was==='replay')renderHistory();
  if(was==='round'){
   currentHole=mapHole;
   if(lastRoundMapDist)greenDist=lastRoundMapDist;
@@ -1833,7 +1934,12 @@ function saveCourse(){
  if(!courseDraft.tees.length)courseDraft.tees=['Regular'];
  if(courseEditId==='new')state.courses.push(courseDraft);
  else{const i=state.courses.findIndex(x=>x.id===courseEditId);if(i>=0)state.courses[i]=courseDraft;else state.courses.push(courseDraft)}
- courseEditId=null;courseDraft=null;saveState();renderSettings();toast('Đã lưu sân');
+ const saved=courseDraft;
+ const act=currentRound();
+ if(act&&act.courseId===saved.id){
+  act.holes.forEach((h,i)=>{const ch=saved.holes[i];if(ch){h.par=num(ch.par)||h.par;const L=num(ch.lengths&&ch.lengths[act.tee]);if(L)h.length=L}});
+ }
+ courseEditId=null;courseDraft=null;saveState();renderSettings();renderRound();toast('Đã lưu sân'+(act&&act.courseId===saved.id?' • đã đồng bộ vào round đang chơi':''));
 }
 async function captureCourseGps(i,kind){
  if(!courseDraft)return;
@@ -1898,7 +2004,7 @@ function confirmDeleteRound(id){
 const app={
  switchTab,closeModal,openNewRound,editRoundMeta,editHoleMeta,openAddShotModal,openAddApproachModal,startGpsShot,arriveGpsShot,clearGpsShot,requestDeleteRound,confirmDeleteRound,
  openCourseEditor,cancelCourseEdit,saveCourse,captureCourseGps,manualCourseGps,clearCourseGps,requestDeleteCourse,confirmDeleteCourse,measureToGreen,useTeeStart,startTeeShot,
- openHolePicker,openScorecard,requestEndRound,confirmEndRound,
+ openHolePicker,openScorecard,requestEndRound,confirmEndRound,openExportPicker,confirmExport,openReplayMap,
  setStatsScope(k,v){const sc2=state.settings.statsScope||(state.settings.statsScope={type:'all',n:10});if(k==='n')sc2.n=Math.max(1,num(v)||10);else sc2.type=v;saveState();renderStats()},
  cSetHoleCount(v){
   if(!courseDraft)return;
@@ -1999,7 +2105,7 @@ const app={
   else if(token.startsWith('round:')){const r=state.rounds.find(x=>x.id===token.slice(6));if(r){course.value=r.course;setTeeInput(r.tee||'Regular');if(search)search.value=r.course}}
   toast('Đã chọn sân')},
  onCourseNameInput(){const hidden=document.getElementById('nrTemplateId');if(!hidden)return;hidden.value='';const t=document.getElementById('nrTee');if(t&&t.tagName==='SELECT'){const w=document.getElementById('nrTeeWrap');if(w)w.innerHTML='<label>Tee</label><input id="nrTee" value="Regular">'}},
- createRound(){const token=document.getElementById('nrTemplateId').value,name=document.getElementById('nrCourse').value.trim()||'Round mới',date=document.getElementById('nrDate').value,tee=document.getElementById('nrTee').value.trim()||'Regular',mode=document.getElementById('nrMode').value||'real';let r;if(token==='preset:nouvelle')r=makeRound(name,date,tee,'nouvelle',mode);else if(token.startsWith('course:')){const c=state.courses.find(x=>x.id===token.slice(7));r=c?makeRoundFromCourse(c,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else if(token.startsWith('round:')){const src=state.rounds.find(x=>x.id===token.slice(6));r=src?makeRoundFromTemplate(src,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else r=makeRound(name,date,tee,'blank',mode);state.rounds.push(r);state.currentRoundId=r.id;currentHole=1;saveState();closeModal();render();toast('Đã tạo round')},
+ createRound(){const token=document.getElementById('nrTemplateId').value,name=document.getElementById('nrCourse').value.trim()||'Round mới',date=document.getElementById('nrDate').value,tee=document.getElementById('nrTee').value.trim()||'Regular',mode=document.getElementById('nrMode').value||'real';let r;if(token==='preset:nouvelle')r=makeRound(name,date,tee,'nouvelle',mode);else if(token.startsWith('course:')){const c=state.courses.find(x=>x.id===token.slice(7));r=c?makeRoundFromCourse(c,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else if(token.startsWith('round:')){const src=state.rounds.find(x=>x.id===token.slice(6));r=src?makeRoundFromTemplate(src,name,date,tee,mode):makeRound(name,date,tee,'blank',mode)}else if(mode==='real'){const nc=makeCourse(name);nc.tees=[tee||'Regular'];state.courses.push(nc);r=makeRoundFromCourse(nc,name,date,tee,mode)}else r=makeRound(name,date,tee,'blank',mode);state.rounds.push(r);state.currentRoundId=r.id;currentHole=1;saveState();closeModal();render();toast(r.courseId&&!token?'Đã tạo round • sân mới được lưu vào danh sách sân':'Đã tạo round')},
  saveRoundMeta(){const r=currentRound();if(!r)return;r.course=document.getElementById('rmCourse').value.trim()||'Round mới';r.date=document.getElementById('rmDate').value||today();r.tee=document.getElementById('rmTee').value.trim()||'Regular';r.mode=document.getElementById('rmMode').value||'real';saveState();closeModal();render();toast('Đã cập nhật round')},
  goHole(n){const r=currentRound();if(!r||n<1||n>r.holes.length)return;currentHole=n;greenDist=null;renderRound();window.scrollTo(0,0)},
  pickHole(n){closeModal();this.goHole(n)},
@@ -2015,7 +2121,12 @@ const app={
  setHole(k,v){const h=currentRound().holes[currentHole-1];h[k]=k==='manualPenalty'?num(v):v;saveState()},
  saveHoleMeta(){const h=currentRound().holes[currentHole-1];h.par=num(document.getElementById('hmPar').value)||4;h.length=num(document.getElementById('hmLen').value)||'';h.target=document.getElementById('hmTarget').value;h.strategy=document.getElementById('hmStrategy').value;saveState();closeModal();renderRound()},
  removeShot(i){currentRound().holes[currentHole-1].shots.splice(i,1);saveState();renderRound()},
- setShot(i,k,v){const s=currentRound().holes[currentHole-1].shots[i];s[k]=['carry','total'].includes(k)?(v===''?'':num(v)):v;if(k==='outcome'&&!PLAYABLE_OUTCOMES.includes(v)){s.carry='';s.total='';s.gpsEnd=null;s.gpsDistanceYd=''}saveState();renderRound()},
+ setShot(i,k,v){const s=currentRound().holes[currentHole-1].shots[i];s[k]=['carry','total'].includes(k)?(v===''?'':num(v)):v;if(k==='outcome'&&!PLAYABLE_OUTCOMES.includes(v)){s.carry='';s.total='';s.gpsEnd=null;s.gpsDistanceYd=''}
+  if(k==='outcome'&&v==='Green'&&s.gpsEnd){
+   const r2=currentRound(),c2=courseForRound(r2);
+   if(c2){const ch=c2.holes[currentHole-1];if(ch&&!ch.greenGps){ch.greenGps={...s.gpsEnd};toast('Đã lưu vị trí green vào sân từ cú on green')}}
+  }
+  saveState();renderRound()},
  removeApproach(i){currentRound().holes[currentHole-1].approaches.splice(i,1);saveState();renderRound()},
  setApproach(i,k,v){const a=currentRound().holes[currentHole-1].approaches[i];a[k]=v;saveState();renderRound()},
  addPutt,removePutt(i){const ps=currentRound().holes[currentHole-1].putts;ps.splice(i,1);if(ps.length)ps[ps.length-1].made=true;saveState();renderRound()},
@@ -2027,7 +2138,7 @@ const app={
  deleteRound(id){requestDeleteRound(id)},
  exportRound(){const r=currentRound();if(!r)return toast('Chưa có round');download(`golf_${r.date}_${r.course.replace(/[^a-z0-9]+/gi,'_')}.json`,exportPayload(r))},exportSpecific(id){const r=state.rounds.find(x=>x.id===id);if(r)download(`golf_${r.date}_${r.course.replace(/[^a-z0-9]+/gi,'_')}.json`,exportPayload(r))},exportAll(){download(`golf_round_manager_backup_${today()}.json`,{app:'Golf Round Manager',version:VERSION,exportedAt:new Date().toISOString(),data:state})},
  async shareRound(){const r=currentRound();if(!r)return toast('Chưa có round');const payload=JSON.stringify(exportPayload(r),null,2),file=new File([payload],`golf_${r.date}.json`,{type:'application/json'});try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({title:'Golf round data',text:`${r.course} ${r.date}`,files:[file]})}else download(file.name,exportPayload(r))}catch(e){if(e.name!=='AbortError')download(file.name,exportPayload(r))}},
- importFile(file){if(!file)return;const rd=new FileReader();rd.onload=()=>{try{const x=JSON.parse(rd.result);if(x.data&&x.data.rounds){if(!confirm('Import backup sẽ thay dữ liệu hiện tại. Tiếp tục?'))return;Object.assign(state,x.data);state.rounds=(state.rounds||[]).map(migrateRound);state.courses=(x.data.courses||[]).map(migrateCourse)}else if(x.round){const r=migrateRound(x.round);r.id=uid();state.rounds.push(r);state.currentRoundId=r.id}else throw new Error('format');state.version=VERSION;saveState();render();toast('Import thành công')}catch(e){alert('File JSON không đúng định dạng Golf Round Manager.')}};rd.readAsText(file)},
+ importFile(file){if(!file)return;const rd=new FileReader();rd.onload=()=>{try{const x=JSON.parse(rd.result);if(x.data&&x.data.rounds){if(!confirm('Import backup sẽ thay dữ liệu hiện tại. Tiếp tục?'))return;Object.assign(state,x.data);state.rounds=(state.rounds||[]).map(migrateRound);state.courses=(x.data.courses||[]).map(migrateCourse)}else if(Array.isArray(x.rounds)){x.rounds.forEach(rr=>{const r2=migrateRound(rr);r2.id=uid();state.rounds.push(r2)})}else if(x.round){const r=migrateRound(x.round);r.id=uid();state.rounds.push(r);state.currentRoundId=r.id}else throw new Error('format');state.version=VERSION;saveState();render();toast('Import thành công')}catch(e){alert('File JSON không đúng định dạng Golf Round Manager.')}};rd.readAsText(file)},
  saveClubs(){state.settings.clubs=document.getElementById('clubEditor').value.split(/\n|,/).map(x=>x.trim()).filter(Boolean);saveState();render();toast('Đã lưu danh sách gậy')},resetAll(){if(!confirm('Xóa TOÀN BỘ round và cài đặt?'))return;localStorage.removeItem(STORAGE_KEY);location.reload()}
 };
 window.app=app;document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.tab)));render();
