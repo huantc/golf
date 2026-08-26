@@ -918,7 +918,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=34, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=35, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -1507,10 +1507,17 @@ async function captureAddPosition(kind){
    const a=h.approaches[h.approaches.length-1];
    if(a&&g&&(a.remaining===''||a.remaining===undefined||a.remaining===null))a.remaining=Math.round(gpsDistanceYards(fix,g));
   }
+  // Putt đầu tiên = đang đứng trên green cạnh bóng → học vị trí green vào sân nếu hố chưa có (fix đủ tốt).
+  let learnedGreen=false;
+  if(kind==='putt'&&(num(fix.accuracy)||0)<=20){
+   const c=courseForRound(r);
+   if(c){const ch=c.holes[currentHole-1];if(ch&&!ch.greenGps){ch.greenGps={...fix};learnedGreen=true}}
+  }
   if(g)greenDist={hole:currentHole,yd:gpsDistanceYards(fix,g),acc:Math.sqrt((num(fix.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
   const weakNote=(num(fix.accuracy)||0)>15?` • ⚠️ GPS ±${Math.round(fix.accuracy)}m`:'';
-  if(closed!==null)toast(`📍 Cú trước ${closed}y${g?` • còn ${Math.round(gpsDistanceYards(fix,g))}y đến green`:''}${weakNote} — nếu bấm nhầm, xóa cú vừa thêm để đo lại`);
+  if(closed!==null)toast(`📍 Cú trước ${closed}y${g?` • còn ${Math.round(gpsDistanceYards(fix,g))}y đến green`:''}${weakNote}${learnedGreen?' • đã lưu vị trí green vào sân':''} — nếu bấm nhầm, xóa cú vừa thêm để đo lại`);
+  else if(learnedGreen)toast('📍 Đã lưu vị trí green vào sân từ putt đầu tiên'+weakNote);
  }catch(e){}
 }
 function clearAutoEnd(h){
