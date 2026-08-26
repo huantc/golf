@@ -41,7 +41,9 @@ table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 7px;b
 .history-item{padding:12px 0;border-bottom:1px solid var(--line)}.history-item:last-child{border-bottom:0}.history-title{font-weight:850;color:var(--green)}
 .mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#e9f0eb;border-radius:12px;padding:4px;margin-bottom:12px}.mode-tab{border:0;border-radius:9px;background:transparent;padding:10px 8px;font-weight:800;color:var(--muted)}.mode-tab.active{background:#fff;color:var(--green);box-shadow:0 2px 8px rgba(20,59,42,.09)}.mode-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:4px 7px;border-radius:999px;background:#e7f1ea;color:var(--green);margin-left:5px}.mode-badge.sim{background:#e9eef8;color:#315fa3}.empty{text-align:center;padding:35px 15px;color:var(--muted)}.note{padding:10px 12px;background:#f6f3e6;border-radius:12px;font-size:13px;color:#64582b}.danger-zone{border-color:#f0c2c7}.hidden{display:none!important}
 .modal{position:fixed;inset:0;z-index:50;background:rgba(10,20,14,.48);display:flex;align-items:flex-end;justify-content:center}.modal .sheet{width:100%;max-width:760px;max-height:92vh;overflow:auto;background:#fff;border-radius:20px 20px 0 0;padding:18px 14px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(0,0,0,.2)}.modal h3{margin:0 0 14px;color:var(--green)}
-.toast{position:fixed;z-index:130;left:50%;bottom:92px;transform:translateX(-50%);background:#153b2a;color:#fff;padding:10px 14px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;white-space:nowrap}.toast.show{opacity:1}
+.toast{position:fixed;z-index:130;left:50%;bottom:92px;transform:translateX(-50%);background:#153b2a;color:#fff;padding:10px 14px;border-radius:16px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;max-width:92vw;text-align:center}.toast.show{opacity:1}
+.gps-hud{position:fixed;z-index:129;left:50%;bottom:136px;transform:translateX(-50%);background:#1a5c8a;color:#fff;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;pointer-events:none;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.live-gps-btn.on{background:#1f7a4c;border-color:#1f7a4c;color:#fff;font-weight:700}
 @media(max-width:520px){.grid4{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:1fr 1fr}.putt{grid-template-columns:52px 1fr 96px 44px}.metric-grid{grid-template-columns:repeat(3,1fr)}.brand h1{font-size:18px}}
 </style>
 
@@ -916,7 +918,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 <script>
 (() => {
 'use strict';
-const VERSION=32, STORAGE_KEY='golfRoundManagerV1';
+const VERSION=34, STORAGE_KEY='golfRoundManagerV1';
 const CLUBS=['Driver','3W','5W','3U','4U','5U','4i','5i','6i','7i','8i','9i','PW','AW','50°','52°','54°','56°','58°','60°','62°','Other'];
 const DIRECTIONS=['Thẳng','Trái','Phải'];
 const CONTACTS=['Clean','Top','Thin','Fat','Khác'];
@@ -939,7 +941,7 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 function today(){return new Date().toISOString().slice(0,10)}
 function esc(s){return String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
 function num(v){const n=Number(v);return Number.isFinite(n)?n:0}
-function defaultState(){return {version:VERSION,currentRoundId:null,rounds:[],courses:[],settings:{clubs:[...CLUBS],statsScope:{type:'all',n:10}}}}
+function defaultState(){return {version:VERSION,currentRoundId:null,rounds:[],courses:[],settings:{clubs:[...CLUBS],statsScope:{type:'all',n:10},liveGps:false}}}
 function migrateHole(h){
  h.shots=Array.isArray(h.shots)?h.shots:[]; h.approaches=Array.isArray(h.approaches)?h.approaches:[]; h.putts=Array.isArray(h.putts)?h.putts:[];
  // Keep old purpose=Approach shots as full-swing Approach because older data cannot tell full vs partial reliably.
@@ -981,7 +983,8 @@ function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);if(!raw)ret
 const state=loadState();
 let saveTimer=null;
 function saveState(){try{state.version=VERSION;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));const el=document.getElementById('saveStatus');if(el){el.textContent='Đã lưu trên iPhone';el.classList.add('ok')}clearTimeout(saveTimer);saveTimer=setTimeout(()=>{if(el)el.textContent='Đã lưu tự động'},1200)}catch(e){const el=document.getElementById('saveStatus');if(el){el.textContent='Không lưu được – hãy Export';el.classList.remove('ok')}}}
-function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800)}
+let toastTimer=null;
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),Math.min(4500,1500+msg.length*22))}
 function currentRound(){return state.rounds.find(r=>r.id===state.currentRoundId)||null}
 function outcomeMeta(v){return OUTCOMES.find(x=>x.v===v)||OUTCOMES[0]}
 function allStrikes(h){return [...(h.shots||[]),...(h.approaches||[])]}
@@ -1225,7 +1228,7 @@ function kpi(label,val,cls=''){return `<div class="kpi ${cls}"><div class="v">${
 function render(){renderRound();renderStats();renderHistory();renderSettings();switchTab(activeTab,false)}
 function switchTab(tab,rerender=true){activeTab=tab;document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.getElementById('page'+tab).classList.add('active');document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));if(rerender){const r=currentRound();if(tab==='Stats'){if(r)statsMode=r.mode||'real';renderStats()}if(tab==='History')renderHistory()}}
 function renderRound(){
- const el=document.getElementById('pageRound'),r=currentRound(); if(!r){el.innerHTML=`<div class="card empty"><div style="font-size:42px">⛳</div><h3>Chưa có round đang chơi</h3><p>Tạo round mới để bắt đầu, hoặc mở lại round cũ từ Lịch sử (nút Edit).</p><button class="btn primary" onclick="app.openNewRound()">+ Round mới</button></div>`;return}
+ const el=document.getElementById('pageRound'),r=currentRound(); syncLiveGps(); if(!r){el.innerHTML=`<div class="card empty"><div style="font-size:42px">⛳</div><h3>Chưa có round đang chơi</h3><p>Tạo round mới để bắt đầu, hoặc mở lại round cũ từ Lịch sử (nút Edit).</p><button class="btn primary" onclick="app.openNewRound()">+ Round mới</button></div>`;return}
  if(currentHole>r.holes.length)currentHole=1;
  const st=fullRoundStats(r),h=r.holes[currentHole-1],hs=holeScore(h),hd=holeDelta(h),nH=r.holes.length;
  el.innerHTML=`
@@ -1251,7 +1254,7 @@ function greenRowInner(r,h){
  const g=greenGpsFor(r,h.hole);
  const d=greenDist&&greenDist.hole===h.hole?greenDist:null;
  const rec=d?recommendClub(r.mode,Math.round(d.yd)):null;
- return `🎯 ${d?`<b>${Math.round(d.yd)}y</b>`:'<b>–</b>'}<span class="small"> ${g?(d?`${gpsAccuracyLabel(d.acc)}${rec?` • gợi ý <b>${esc(rec.club)}</b>`:''}`:'cập nhật khi ⛳ Tee shot, 🏁 Đến bóng hoặc mở 🗺️ Map'):'hố chưa có green GPS'}</span>`;
+ return `🎯 ${d?`<b>${Math.round(d.yd)}y</b>`:'<b>–</b>'}<span class="small"> ${g?(d?`${gpsAccuracyLabel(d.acc)}${rec?` • gợi ý <b>${esc(rec.club)}</b>`:''}`:(liveGpsOn()?'📡 GPS liên tục — cự ly tự cập nhật sau vài giây':'cập nhật khi ⛳ Tee shot, 🏁 Đến bóng hoặc mở 🗺️ Map')):'hố chưa có green GPS'}</span>`;
 }
 function updateGreenRowLive(){
  const el=document.getElementById('greenRowLive'); if(!el)return;
@@ -1265,9 +1268,9 @@ function renderHoleHeader(r,h,hs){
  <div class="green-row">
   <div class="green-dist-inline" id="greenRowLive">${greenRowInner(r,h)}</div>
   <div class="hole-score-big" onclick="app.openScorecard()" title="Score hố này">${hs===''?'–':hs}</div>
-  <div class="row" style="gap:6px;flex:none"><button class="btn compact" onclick="app.openRoundMap()">🗺️ Map</button></div>
+  <div class="row" style="gap:6px;flex:none"><button class="btn compact live-gps-btn ${liveGpsOn()?'on':''}" onclick="app.toggleLiveGps()" title="GPS liên tục: chính xác hơn, tốn pin hơn">📡${liveGpsOn()?' ON':''}</button><button class="btn compact" onclick="app.openRoundMap()">🗺️ Map</button></div>
  </div>`:`
- <div class="green-row"><div class="small">Ghi từng cú đánh bên dưới.</div><div class="hole-score-big">${hs===''?'–':hs}</div><button class="btn ghost compact" onclick="app.editHoleMeta()">✎ Sửa hố</button></div>`;
+ <div class="green-row"><div class="small">Ghi từng cú đánh bên dưới.</div><div class="hole-score-big">${hs===''?'–':hs}</div>${r.mode==='real'?`<button class="btn compact live-gps-btn ${liveGpsOn()?'on':''}" onclick="app.toggleLiveGps()">📡${liveGpsOn()?' ON':''}</button>`:''}<button class="btn ghost compact" onclick="app.editHoleMeta()">✎ Sửa hố</button></div>`;
  return `<div class="card hole-head-merged">
  <div class="hole-nav-row">
   <button class="btn ghost" ${currentHole===1?'disabled':''} onclick="app.goHole(${currentHole-1})">← H${Math.max(1,currentHole-1)}</button>
@@ -1352,35 +1355,110 @@ function gpsAccuracyLabel(v){
  if(v<=15)return `GPS khá • ±${Math.round(v)}m`;
  return `GPS yếu • ±${Math.round(v)}m`;
 }
+let gpsHudEl=null;
+function gpsHud(msg){
+ if(msg===null){if(gpsHudEl){gpsHudEl.remove();gpsHudEl=null}return}
+ if(!gpsHudEl){gpsHudEl=document.createElement('div');gpsHudEl.className='gps-hud';document.body.appendChild(gpsHudEl)}
+ gpsHudEl.textContent=msg;
+}
+// v33: đo "thông minh" — chờ GPS hội tụ (tối đa 15s), loại mẫu kém, lấy trung bình có trọng số các mẫu tốt.
+// Trước đây chấp nhận sau 3 mẫu bất kỳ → trên iPhone 3 mẫu đầu thường là ước lượng Wi-Fi/cell sai 20-60m.
+function gpsWeightedAvg(arr){
+ const a=[...arr].sort((x,y)=>(x.coords.accuracy||9999)-(y.coords.accuracy||9999));
+ const best=a[0].coords.accuracy||999;
+ const use=a.filter(s=>(s.coords.accuracy||999)<=Math.max(best*1.5,best+3)).slice(0,6);
+ let W=0,la=0,ln=0;
+ use.forEach(s=>{const w=1/Math.pow(Math.max(s.coords.accuracy||30,3),2);W+=w;la+=s.coords.latitude*w;ln+=s.coords.longitude*w});
+ return {coords:{latitude:la/W,longitude:ln/W,accuracy:best},timestamp:Date.now()};
+}
+// v34: GPS liên tục (opt-in) — chip luôn "ấm" khi ở tab Round, mỗi lần bấm nút có ngay vị trí chính xác.
+let liveWatchId=null, liveSamples=[], liveGreenTick=0;
+function liveGpsOn(){return state.settings.liveGps===true}
+// Fix "sẵn sàng" từ GPS liên tục: neo theo mẫu MỚI NHẤT (acc≤6, ≤5s), chỉ trung bình các mẫu
+// gần đó (loại mẫu cũ ở vị trí trước khi mình di chuyển tới bóng).
+function liveFixNow(){
+ const now=Date.now();
+ const fresh=liveSamples.filter(s=>now-(s.timestamp||0)<=5000&&(s.coords.accuracy||999)<=6);
+ if(!fresh.length)return null;
+ const anchor=fresh[fresh.length-1];
+ const aPt={lat:anchor.coords.latitude,lng:anchor.coords.longitude};
+ const tolM=Math.max((anchor.coords.accuracy||6)*1.5,8);
+ const near=fresh.filter(s=>gpsDistanceYards({lat:s.coords.latitude,lng:s.coords.longitude},aPt)*0.9144<=tolM);
+ return gpsWeightedAvg(near.slice(-6));
+}
+function startLiveGps(){
+ if(liveWatchId!==null||!navigator.geolocation)return;
+ try{
+  liveWatchId=navigator.geolocation.watchPosition(p=>{
+   liveSamples.push(p);
+   const cut=Date.now()-10000;
+   liveSamples=liveSamples.filter(s=>(s.timestamp||0)>=cut);
+   const now=Date.now();
+   if(now-liveGreenTick>=2000){
+    liveGreenTick=now;
+    const r=currentRound();
+    if(r&&r.mode==='real'&&(p.coords.accuracy||999)<=25){
+     const g=greenGpsFor(r,currentHole);
+     if(g){
+      const pt=gpsPointFromPosition(p);
+      greenDist={hole:currentHole,yd:gpsDistanceYards(pt,g),acc:Math.sqrt((num(pt.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
+      updateGreenRowLive();
+     }
+    }
+   }
+  },()=>{},{enableHighAccuracy:true,maximumAge:1000,timeout:20000});
+ }catch(e){}
+}
+function stopLiveGps(){
+ if(liveWatchId!==null){try{navigator.geolocation.clearWatch(liveWatchId)}catch(e){}liveWatchId=null}
+ liveSamples=[];
+}
+function syncLiveGps(){
+ const r=currentRound();
+ if(r&&r.mode==='real'&&liveGpsOn()&&!document.hidden)startLiveGps();
+ else stopLiveGps();
+}
+document.addEventListener('visibilitychange',syncLiveGps);
 function bestGpsPosition(){
  return new Promise((resolve,reject)=>{
   if(!navigator.geolocation){reject(new Error('Thiết bị/browser không hỗ trợ GPS.'));return}
+  // GPS liên tục đang chạy và có fix tốt trong 5s gần nhất → dùng ngay, không cần đo lại
+  if(liveWatchId!==null){
+   const lf=liveFixNow();
+   if(lf){resolve(lf);return}
+  }
   const samples=[]; let watchId=null,finished=false;
+  const t0=Date.now(), GOOD=6, OKACC=12, MIN_SETTLE=4000, MAX_WAIT=15000;
+  const bestAcc=()=>samples.length?Math.min(...samples.map(s=>s.coords.accuracy||999)):999;
   const done=()=>{
    if(finished)return; finished=true;
    if(watchId!==null)navigator.geolocation.clearWatch(watchId);
-   clearTimeout(timer);
+   clearTimeout(hardTimer); clearTimeout(settleTimer); gpsHud(null);
    if(!samples.length){reject(new Error('Không lấy được vị trí GPS.'));return}
-   samples.sort((a,b)=>(a.coords.accuracy||9999)-(b.coords.accuracy||9999));
-   resolve(samples[0]);
+   resolve(gpsWeightedAvg(samples));
   };
   const fail=(e)=>{
    if(finished)return;
+   if(samples.length){done();return}
    if(watchId!==null)navigator.geolocation.clearWatch(watchId);
-   clearTimeout(timer); finished=true;
+   clearTimeout(hardTimer); clearTimeout(settleTimer); finished=true; gpsHud(null);
    let msg='Không lấy được GPS.';
    if(e&&e.code===1) msg=window.isSecureContext?'Bạn chưa cho phép truy cập vị trí cho browser.':'GPS bị browser chặn vì app đang mở từ file local. Trên iPhone, hãy chạy app qua HTTPS để dùng GPS ổn định.';
    else if(e&&e.code===2) msg='Không xác định được vị trí. Hãy ra khu vực thoáng hơn rồi thử lại.';
    else if(e&&e.code===3) msg='GPS mất quá nhiều thời gian. Hãy thử lại.';
    reject(new Error(msg));
   };
-  const timer=setTimeout(()=>samples.length?done():fail({code:3}),5500);
+  const hardTimer=setTimeout(()=>samples.length?done():fail({code:3}),MAX_WAIT);
+  const settleTimer=setTimeout(()=>{if(!finished&&bestAcc()<=OKACC)done()},MIN_SETTLE+100);
+  gpsHud('📡 Đang đo GPS…');
   try{
    watchId=navigator.geolocation.watchPosition(p=>{
     samples.push(p);
-    if((p.coords.accuracy||999)>0 && p.coords.accuracy<=6)done();
-    else if(samples.length>=3)done();
-   },fail,{enableHighAccuracy:true,maximumAge:0,timeout:5000});
+    const acc=p.coords.accuracy||999, el=Date.now()-t0;
+    gpsHud(`📡 Đang đo GPS ±${Math.round(bestAcc())}m…`);
+    if(acc>0&&acc<=GOOD)done();
+    else if(bestAcc()<=OKACC&&el>=MIN_SETTLE)done();
+   },fail,{enableHighAccuracy:true,maximumAge:0,timeout:MAX_WAIT});
   }catch(e){fail(e)}
  });
 }
@@ -1411,13 +1489,15 @@ async function captureAddPosition(kind){
  const r=currentRound(); if(!r||r.mode!=='real')return;
  try{
   const p=await bestGpsPosition(), fix=gpsPointFromPosition(p);
+  if((num(fix.accuracy)||0)>30){toast(`⚠️ GPS quá yếu (±${Math.round(fix.accuracy)}m) — không tự đo cự ly. Bấm 🏁 Đến bóng để đo lại, hoặc nhập tay.`);return}
   const h=r.holes[currentHole-1]; if(!h)return;
   const g=greenGpsFor(r,currentHole), shots=h.shots;
   const prev=kind==='full'?shots[shots.length-2]:shots[shots.length-1];
   let closed=null;
   if(prev&&prev.gpsStart&&!prev.gpsEnd){
    const yd=gpsDistanceYards(prev.gpsStart,fix);
-   if(yd>=15){prev.gpsEnd={...fix};prev.gpsDistanceYd=Math.round(yd*10)/10;prev.total=Math.round(yd);prev.gpsEndAuto=true;closed=Math.round(yd)}
+   const minYd=Math.max(15,(num(fix.accuracy)||0)*2.2,(num(prev.gpsStart.accuracy)||0)*2.2);
+   if(yd>=minYd){prev.gpsEnd={...fix};prev.gpsDistanceYd=Math.round(yd*10)/10;prev.total=Math.round(yd);prev.gpsEndAuto=true;closed=Math.round(yd)}
   }
   if(kind==='full'){
    const s=shots[shots.length-1];
@@ -1429,7 +1509,8 @@ async function captureAddPosition(kind){
   }
   if(g)greenDist={hole:currentHole,yd:gpsDistanceYards(fix,g),acc:Math.sqrt((num(fix.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
-  if(closed!==null)toast(`📍 Cú trước ${closed}y${g?` • còn ${Math.round(gpsDistanceYards(fix,g))}y đến green`:''} — nếu bấm nhầm, xóa cú vừa thêm để đo lại`);
+  const weakNote=(num(fix.accuracy)||0)>15?` • ⚠️ GPS ±${Math.round(fix.accuracy)}m`:'';
+  if(closed!==null)toast(`📍 Cú trước ${closed}y${g?` • còn ${Math.round(gpsDistanceYards(fix,g))}y đến green`:''}${weakNote} — nếu bấm nhầm, xóa cú vừa thêm để đo lại`);
  }catch(e){}
 }
 function clearAutoEnd(h){
@@ -1456,12 +1537,13 @@ async function startGpsShot(i){
    greenDist={hole:currentHole,yd:gpsDistanceYards(s.gpsStart,g),acc:Math.sqrt((num(s.gpsStart.accuracy)||0)**2+(num(g.accuracy)||0)**2)};
   }
   let teeUpdated=false;
-  if(i===0){
+  if(i===0&&(num(s.gpsStart.accuracy)||0)<=20){
    const c=courseForRound(r);
    if(c&&c.holes[currentHole-1]){c.holes[currentHole-1].teeGps={...s.gpsStart};teeUpdated=true}
   }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
-  toast((i===0?'Đã lưu vị trí tee':'Đã lưu điểm bắt đầu')+(g?` • còn ${s.remaining}y đến green`:` • ±${Math.round(s.gpsStart.accuracy)}m`)+(teeUpdated?' • đã cập nhật tee của sân':''));
+  const weakStart=(num(s.gpsStart.accuracy)||0)>15?` • ⚠️ GPS yếu ±${Math.round(s.gpsStart.accuracy)}m, nên bấm ↺ Đo lại`:` • ±${Math.round(s.gpsStart.accuracy)}m`;
+  toast((i===0?'Đã lưu vị trí tee':'Đã lưu điểm bắt đầu')+(g?` • còn ${s.remaining}y đến green`:'')+weakStart+(teeUpdated?' • đã cập nhật tee của sân':''));
  }catch(e){alert(e.message||'Không lấy được GPS.')}
 }
 async function arriveGpsShot(i){
@@ -1499,7 +1581,8 @@ async function arriveGpsShot(i){
   }
   const y=window.scrollY; saveState(); renderRound(); requestAnimationFrame(()=>window.scrollTo(0,y));
   const acc=gpsCombinedAccuracy(s.gpsStart,s.gpsEnd);
-  toast((g?`Total ${Math.round(yd)}y • còn ${Math.round(greenDist.yd)}y đến green`:`GPS Total ${Math.round(yd)}y • ${gpsAccuracyLabel(acc)}`)+autoMsg);
+  const weakArr=acc!==null&&acc>15?` • ⚠️ ±${Math.round(acc)}m, bấm 🏁 lần nữa để đo lại`:'';
+  toast((g?`Total ${Math.round(yd)}y • còn ${Math.round(greenDist.yd)}y đến green`:`GPS Total ${Math.round(yd)}y • ${gpsAccuracyLabel(acc)}`)+weakArr+autoMsg);
  }catch(e){alert(e.message||'Không lấy được GPS.')}
 }
 function clearGpsShot(i){
@@ -2227,6 +2310,12 @@ const app={
  cSetLen(i,ti,v){if(!courseDraft)return;const t=courseDraft.tees[ti];if(t===undefined)return;courseDraft.holes[i].lengths[t]=v===''?'':num(v)},
  cSetType(v){if(!courseDraft)return;courseDraft.type=v==='sim'?'sim':'real';const y=window.scrollY;renderSettings();requestAnimationFrame(()=>window.scrollTo(0,y))},
  downloadCourseTiles,
+ toggleLiveGps(){
+  state.settings.liveGps=!liveGpsOn();
+  saveState();
+  const y=window.scrollY;renderRound();requestAnimationFrame(()=>window.scrollTo(0,y));
+  toast(state.settings.liveGps?'📡 GPS liên tục BẬT — vị trí luôn sẵn sàng và chính xác hơn, tốn pin hơn (~10-15%/round). Tự tạm dừng khi tắt màn hình.':'📡 GPS liên tục TẮT — chỉ đo khi bấm nút (tiết kiệm pin).');
+ },
  cSetRating(ti,f,v){if(!courseDraft)return;const t=courseDraft.tees[ti];if(t===undefined)return;courseDraft.ratings=courseDraft.ratings||{};courseDraft.ratings[t]=courseDraft.ratings[t]||{};courseDraft.ratings[t][f]=v===''?'':num(v)},
  async osmSearch(){
   const q=(document.getElementById('osmQ')?.value||'').trim();
@@ -2298,7 +2387,7 @@ const app={
  saveHoleMeta(){const h=currentRound().holes[currentHole-1];h.par=num(document.getElementById('hmPar').value)||4;h.length=num(document.getElementById('hmLen').value)||'';h.target=document.getElementById('hmTarget').value;h.strategy=document.getElementById('hmStrategy').value;saveState();closeModal();renderRound()},
  removeShot(i){const h=currentRound().holes[currentHole-1];h.shots.splice(i,1);if(clearAutoEnd(h))toast('Đã hoàn tác vị trí bóng tự động — bấm thêm cú khi tới đúng chỗ bóng');saveState();renderRound()},
  setShot(i,k,v){const s=currentRound().holes[currentHole-1].shots[i];s[k]=['carry','total'].includes(k)?(v===''?'':num(v)):v;if(k==='outcome'&&!PLAYABLE_OUTCOMES.includes(v)){s.carry='';s.total='';s.gpsEnd=null;s.gpsDistanceYd=''}
-  if(k==='outcome'&&v==='Green'&&s.gpsEnd){
+  if(k==='outcome'&&v==='Green'&&s.gpsEnd&&(num(s.gpsEnd.accuracy)||0)<=20){
    const r2=currentRound(),c2=courseForRound(r2);
    if(c2){const ch=c2.holes[currentHole-1];if(ch&&!ch.greenGps){ch.greenGps={...s.gpsEnd};toast('Đã lưu vị trí green vào sân từ cú on green')}}
   }
